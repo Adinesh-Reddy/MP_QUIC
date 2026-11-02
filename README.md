@@ -6,7 +6,7 @@
 - [x] **Phase 2: Multiple Paths (`Path`)**
   * Bundles individual network interfaces (e.g. Path 0 = Wi-Fi, Path 1 = Ethernet) with their local and remote IP addresses.
 
-- [ ] **Phase 3: Custom Packet Header (`Packet`)**
+- [x] **Phase 3: Custom Packet Header (`Packet`)**
   * Adds our 20-byte binary header (packet numbers, flags, timestamps) and converts it to/from network byte order.
 
 - [ ] **Phase 4 & 5: Reliability & ACKs (`Reliability`)**
