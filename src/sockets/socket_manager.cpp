@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 
-#include "../include/socket_manager.hpp"
+#include "sockets/socket_manager.hpp"
 
 using namespace std;
 
@@ -51,7 +51,12 @@ void SocketManager::on_receive(RecvCallback cb)
     callback = cb;
 }
 
-void SocketManager::run()
+void SocketManager::on_tick(TickCallback cb)
+{
+    tick_callback = cb;
+}
+
+void SocketManager::run(int tick_ms)
 {
     if (epoll_fd < 0)
         return;
@@ -60,11 +65,11 @@ void SocketManager::run()
     cout << "SocketManager event loop started.\n";
 
     epoll_event events[16];
-    uint8_t buffer[2048];
+    uint8_t buffer[65536];
 
     while (running)
     {
-        int num_events = epoll_wait(epoll_fd, events, 16, 1000);
+        int num_events = epoll_wait(epoll_fd, events, 16, tick_ms);
 
         if (num_events < 0)
         {
@@ -85,11 +90,21 @@ void SocketManager::run()
             string src_ip;
             uint16_t src_port = 0;
 
-            ssize_t received = sock->recvFrom(buffer, sizeof(buffer), src_ip, src_port);
-            if (received > 0 && callback != nullptr)
+            while (true)
             {
-                callback(ready_fd, buffer, (size_t)received, src_ip, src_port);
+                ssize_t received = sock->recvFrom(buffer, sizeof(buffer), src_ip, src_port);
+                if (received <= 0)
+                    break;
+                if (callback != nullptr)
+                {
+                    callback(ready_fd, buffer, (size_t)received, src_ip, src_port);
+                }
             }
+        }
+
+        if (tick_callback != nullptr)
+        {
+            tick_callback();
         }
     }
 
