@@ -5,13 +5,13 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "../include/udp_socket.hpp"
+#include "sockets/udp_socket.hpp"
 
 using namespace std;
 
 UDPSocket::UDPSocket()
 {
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
     if (fd < 0)
     {
         cout << "Error in creation of socket in UDPSocket class\n";
@@ -88,6 +88,33 @@ ssize_t UDPSocket::recvFrom(uint8_t *buffer, size_t max_length, string &src_ip, 
         src_port = ntohs(src_addr.sin_port);
     }
     return received;
+}
+
+uint16_t UDPSocket::get_local_port()
+{
+    if (!isValid())
+        return 0;
+
+    sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    if (getsockname(fd, (struct sockaddr *)&addr, &addr_len) < 0)
+    {
+        return 0;
+    }
+    return ntohs(addr.sin_port);
+}
+
+bool UDPSocket::set_buffer_size(int bytes)
+{
+    if (!isValid())
+        return false;
+
+    bool ok = true;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bytes, sizeof(bytes)) < 0)
+        ok = false;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes)) < 0)
+        ok = false;
+    return ok;
 }
 
 int UDPSocket::get_fd()

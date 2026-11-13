@@ -1,0 +1,12 @@
+# Build output
+build/
+bin/
+*.o
+
+# Raw output of the experiments (the scenarios and the final figures are kept)
+evaluation/results/
+
+.vscode
+
+# Random test files made by evaluation/scripts/start_server.sh
+evaluation/files/
