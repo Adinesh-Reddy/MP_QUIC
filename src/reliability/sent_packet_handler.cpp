@@ -48,11 +48,11 @@ bool SentPacketHandler::sent_packet(uint64_t packet_number, const vector<Frame> 
         // Only data packets restart the timers. Counting pure ACKs as well would let a host
         // that keeps acknowledging push its own retransmissions further and further away.
         last_data_sent_us = now_us;
-        bytes_in_flight += length;
+        unacked_bytes += length;
         in_flight[packet_number] = packet;
     }
 
-    congestion->on_packet_sent(now_us, bytes_in_flight, packet_number, length, carries_data);
+    congestion->on_packet_sent(now_us, unacked_bytes, packet_number, length, carries_data);
 
     rearm_timer();
     return true;
@@ -93,7 +93,7 @@ bool SentPacketHandler::received_ack(const AckFrame &ack, uint64_t with_packet_n
     {
         uint64_t length = in_flight[packet_number].length;
         forget_acked(packet_number);
-        congestion->on_packet_acked(packet_number, length, bytes_in_flight);
+        congestion->on_packet_acked(packet_number, length, unacked_bytes);
     }
 
     declare_lost_packets(rcv_time_us);
@@ -168,7 +168,7 @@ void SentPacketHandler::forget_acked(uint64_t packet_number)
     {
         return;
     }
-    bytes_in_flight -= it->second.length;
+    unacked_bytes -= it->second.length;
 
     // The path answered, so the backoff of both timers starts again from zero
     rtos_in_a_row = 0;
@@ -211,7 +211,7 @@ void SentPacketHandler::declare_lost_packets(uint64_t now_us)
     {
         uint64_t length = in_flight[number].length;
         move_to_lost_queue(number);
-        congestion->on_packet_lost(number, length, bytes_in_flight);
+        congestion->on_packet_lost(number, length, unacked_bytes);
     }
 }
 
@@ -299,7 +299,7 @@ void SentPacketHandler::move_to_lost_queue(uint64_t packet_number)
     {
         return;
     }
-    bytes_in_flight -= it->second.length;
+    unacked_bytes -= it->second.length;
     lost_queue.push_back(it->second);
     in_flight.erase(it);
 }
@@ -309,7 +309,7 @@ void SentPacketHandler::give_up_on(uint64_t packet_number)
     uint64_t length = in_flight[packet_number].length;
     move_to_lost_queue(packet_number);
     total_lost++;
-    congestion->on_packet_lost(packet_number, length, bytes_in_flight);
+    congestion->on_packet_lost(packet_number, length, unacked_bytes);
 }
 
 void SentPacketHandler::send_tail_probe()
@@ -402,13 +402,13 @@ bool SentPacketHandler::sending_allowed() const
     }
 
     // Resending lost data is always allowed, even with a full congestion window
-    bool window_full = bytes_in_flight > congestion->get_congestion_window();
+    bool window_full = unacked_bytes > congestion->get_congestion_window();
     return !window_full || !lost_queue.empty();
 }
 
 uint64_t SentPacketHandler::get_bytes_in_flight() const
 {
-    return bytes_in_flight;
+    return unacked_bytes;
 }
 
 uint64_t SentPacketHandler::get_largest_acked() const

@@ -29,7 +29,8 @@ public:
 
     bool is_started() const;
 
-    // Restart the slow start phase
+    // Forgets the current round and any detected rise; used when an RTO sends the path
+    // back to slow start
     void restart();
 
     // Never leave slow start while the window is still this small (packets)

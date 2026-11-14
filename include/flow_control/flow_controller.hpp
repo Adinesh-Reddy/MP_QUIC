@@ -63,7 +63,7 @@ public:
 
     uint64_t get_receive_window() const;
     uint64_t get_receive_window_increment() const;
-    uint64_t get_highest_received() const;
+    uint64_t get_highest_rx_offset() const;
     uint64_t get_bytes_read() const;
 
 private:
@@ -78,7 +78,7 @@ private:
     uint64_t last_update_us = 0; // 0 = never
 
     uint64_t read_bytes = 0;
-    uint64_t highest_offset = 0;
+    uint64_t highest_rx_offset = 0;
     uint64_t advertised_limit = 0;
     uint64_t window_step = 0;
     uint64_t max_window_step = 0;

@@ -118,7 +118,7 @@ private:
     uint64_t highest_sent = 0;           // number of the last packet sent on this path
     uint64_t highest_acked = 0;          // largest packet number any ACK has covered
     uint64_t newest_ack_carrier = 0;     // number of the newest packet whose ACK we processed
-    uint64_t bytes_in_flight = 0;
+    uint64_t unacked_bytes = 0;
 
     // When the last data packet left; both the probe timer and the RTO count from here
     uint64_t last_data_sent_us = 0;
