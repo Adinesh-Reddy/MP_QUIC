@@ -18,15 +18,15 @@ typedef std::function<void(uint32_t stream_id, uint64_t offset, const vector<uin
 // Called when the peer advertises its addresses with an ADD_ADDRESS frame
 typedef std::function<void(const vector<NetworkAddress> &addresses)> AddAddressCallback;
 
-// A connection on which nothing is received for this long is closed (same value as the reference implementation)
-const uint64_t DEFAULT_IDLE_TIMEOUT_US = 30ULL * 1000 * 1000;
-
 // One MP-QUIC connection: owns the streams, uses the paths, builds packets out of
 // frames and gives the received frames to the right handler.
 // It is not thread safe, call everything from the SocketManager thread.
 class Connection
 {
 public:
+    // A connection that receives nothing for this long gives up (30 s)
+    static constexpr uint64_t DEFAULT_IDLE_TIMEOUT_US = 30ULL * 1000 * 1000;
+
     Connection(uint64_t connection_id);
 
     // The connection points to its own default scheduler, so it must not be copied
@@ -35,7 +35,7 @@ public:
 
     uint64_t get_connection_id() const;
 
-    // Paths are created outside and given to the connection (the path manager comes later).
+    // Paths are created outside (by the PathManager) and registered here.
     // Both hosts must use the same Path ID for the same path.
     // The congestion control of the path is linked with the one of the other paths (OLIA),
     // so a Path must not be used anymore once its Connection is destroyed.
@@ -83,8 +83,8 @@ public:
     // (get_bytes_in_flight() can stay above 0 after that: a PING probing a broken path is also in flight.)
     bool all_data_acknowledged() const;
 
-    // The packet scheduler chooses the path of every packet. By default it is the lowest-RTT
-    // scheduler of the paper. The scheduler given here is not owned by the connection.
+    // The scheduler picks the path of every packet; the default is lowest-RTT-first.
+    // A scheduler passed in here is not owned by the connection.
     void set_scheduler(Scheduler *new_scheduler);
     Scheduler *get_scheduler();
 
@@ -93,7 +93,7 @@ public:
     uint64_t get_ping_probes() const;        // PING frames queued to test a potentially failed path
 
     // PATHS frames: sent when one of our paths becomes potentially failed, so that the peer
-    // stops using it at once (paper, Section 4.3)
+    // stops using it straight away instead of waiting for its own timeout
     uint64_t get_paths_frames_sent() const;
     uint64_t get_paths_frames_received() const;
 
@@ -112,58 +112,58 @@ public:
     void set_idle_timeout(uint64_t timeout_us);
 
 private:
-    bool has_new_stream_data() const;
-    uint64_t get_max_smoothed_rtt();
+    bool has_unsent_stream_data() const;
+    uint64_t largest_path_rtt();
 
-    void queue_window_updates(uint64_t now_us);
-    bool collect_retransmissions();
+    void schedule_window_updates(uint64_t now_us);
+    bool gather_lost_frames();
 
-    void add_ack_frame(Path *path, Packet &packet, uint64_t now_us);
-    void add_control_frames(Path *path, Packet &packet);
-    void add_retransmission_frames(Packet &packet);
-    void add_new_stream_frames(Packet &packet);
+    void attach_ack(Path *path, Packet &packet, uint64_t now_us);
+    void attach_control_frames(Path *path, Packet &packet);
+    void attach_lost_data(Packet &packet);
+    void attach_new_data(Packet &packet);
 
     void send_packet(Path *path, const Packet &packet, uint64_t now_us);
-    void send_duplicate(Path *sent_on, const Packet &packet, uint64_t now_us);
-    void queue_ping_probe(Path *path);
-    void queue_paths_frame();
-    void send_acks_and_control_frames(uint64_t now_us);
+    void send_startup_copy(Path *sent_on, const Packet &packet, uint64_t now_us);
+    void probe_with_ping(Path *path);
+    void announce_path_states();
+    void flush_acks_and_control(uint64_t now_us);
 
-    void handle_frame(const Frame &frame, const Packet &packet, uint64_t now_us);
-    void handle_stream_frame(const StreamFrame &frame, uint64_t now_us);
+    void dispatch_frame(const Frame &frame, const Packet &packet, uint64_t now_us);
+    void deliver_stream_frame(const StreamFrame &frame, uint64_t now_us);
 
-    void close_with_error(const string &reason, uint32_t error_code = CLOSE_PROTOCOL_ERROR);
-    void send_connection_close(uint32_t error_code, const string &reason);
+    void abort_with(const string &reason, uint32_t error_code = CLOSE_PROTOCOL_ERROR);
+    void broadcast_close(uint32_t error_code, const string &reason);
 
     uint64_t connection_id;
     map<uint8_t, Path *> paths;
 
     // The OLIA senders of all the paths: each one needs the window and the RTT of the others
-    map<uint8_t, OliaSender *> olia_senders;
+    map<uint8_t, OliaSender *> coupled_senders;
 
     map<uint32_t, SendStream> send_streams;
     map<uint32_t, ReceiveStream> receive_streams;
     FlowControlManager flow_control_manager;
 
     // STREAM frames of lost packets. They are sent before new data and can leave on any path.
-    deque<Frame> retransmission_queue;
+    deque<Frame> lost_stream_frames;
 
     // Control frames (WINDOW_UPDATE, PING) waiting to be sent on a given path: Path ID -> frames
-    map<uint8_t, deque<Frame>> control_frames;
+    map<uint8_t, deque<Frame>> pending_control;
 
-    StreamDataCallback stream_callback = nullptr;
-    AddAddressCallback add_address_callback = nullptr;
+    StreamDataCallback data_handler = nullptr;
+    AddAddressCallback address_handler = nullptr;
 
     uint64_t idle_timeout_us = DEFAULT_IDLE_TIMEOUT_US;
-    uint64_t last_activity_us = 0; // time of the last packet received
+    uint64_t last_received_us = 0; // time of the last packet received
     bool closed_by_peer = false;
 
     LowestRttScheduler default_scheduler;
     Scheduler *scheduler = nullptr;
-    uint64_t duplicated_packets = 0;
-    uint64_t ping_probes = 0;
-    uint64_t paths_frames_sent = 0;
-    uint64_t paths_frames_received = 0;
+    uint64_t copies_sent = 0;
+    uint64_t probes_queued = 0;
+    uint64_t path_reports_sent = 0;
+    uint64_t path_reports_received = 0;
 
     bool closed = false;
     string close_reason;

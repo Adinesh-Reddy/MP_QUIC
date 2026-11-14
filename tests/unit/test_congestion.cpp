@@ -15,7 +15,7 @@
 // with made-up packets and times, so the results are exact numbers.
 
 const uint64_t T0 = 1000000;
-const uint64_t MSS = DEFAULT_TCP_MSS;
+const uint64_t MSS = CongestionDefaults::MSS_BYTES;
 
 // One packet is sent and acknowledged.
 // window_limited = the sender was filling its whole window (only then the window may grow).
@@ -52,7 +52,7 @@ void test_hybrid_slow_start()
     assert(h.should_exit_slow_start(50000, 50000, 40)); // once found, it stays
 
     // 3. With a window below 16 packets the detection itself does not end slow start
-    //    (the answer comes with the next RTT measurement, as in the reference implementation)
+    //    (slow start ends on the next RTT sample once the window is large enough)
     HybridSlowStart small;
     for (int i = 0; i < 8; i++)
         assert(!small.should_exit_slow_start(60000, 50000, 10));
@@ -89,9 +89,9 @@ void test_slow_start()
     OliaSender sender(&rtt);
     assert(sender.get_name() == "olia");
 
-    assert(sender.get_congestion_window_packets() == INITIAL_CONGESTION_WINDOW);
-    assert(sender.get_congestion_window() == INITIAL_CONGESTION_WINDOW * MSS);
-    assert(sender.get_slow_start_threshold_packets() == DEFAULT_MAX_CONGESTION_WINDOW);
+    assert(sender.get_congestion_window_packets() == CongestionDefaults::INITIAL_WINDOW_PACKETS);
+    assert(sender.get_congestion_window() == CongestionDefaults::INITIAL_WINDOW_PACKETS * MSS);
+    assert(sender.get_slow_start_threshold_packets() == CongestionDefaults::MAX_WINDOW_PACKETS);
     assert(sender.in_slow_start());
     assert(!sender.in_recovery());
 
@@ -174,7 +174,7 @@ void test_loss_and_recovery()
         sender.on_packet_lost(next, MSS, 0);
         next++;
     }
-    assert(sender.get_congestion_window_packets() == DEFAULT_MINIMUM_CONGESTION_WINDOW);
+    assert(sender.get_congestion_window_packets() == CongestionDefaults::MIN_WINDOW_PACKETS);
 
     std::cout << "  -> PASSED\n";
 }
@@ -199,7 +199,7 @@ void test_retransmission_timeout()
     assert(sender.get_congestion_window_packets() == 20);
     sender.on_retransmission_timeout(true);
 
-    assert(sender.get_congestion_window_packets() == DEFAULT_MINIMUM_CONGESTION_WINDOW);
+    assert(sender.get_congestion_window_packets() == CongestionDefaults::MIN_WINDOW_PACKETS);
     assert(sender.get_slow_start_threshold_packets() == 10);
     assert(sender.in_slow_start());
     assert(!sender.in_recovery());
@@ -399,8 +399,8 @@ void test_very_different_rtts_do_not_overflow()
     send_and_ack(slow, pn2, 2000, true);
     assert(slow.get_congestion_window_packets() == 100);
 
-    // Very large windows: every ACK adds less than 1/1024 of a packet, which the integer
-    // arithmetic of the reference implementation rounds to nothing. The window stays.
+    // Very large windows: every ACK adds less than 1/1024 of a packet, which the scaled
+    // integer arithmetic rounds down to nothing. The window stays.
     OliaSender big(&rtt_fast, 2000);
     big.exit_slow_start();
     uint64_t pn3 = 0;
@@ -426,7 +426,7 @@ void test_path_uses_olia()
     OliaSender *olia = path.get_congestion();
     SentPacketHandler *handler = path.get_sent_packet_handler();
     assert(olia->get_name() == "olia");
-    assert(olia->get_congestion_window_packets() == INITIAL_CONGESTION_WINDOW);
+    assert(olia->get_congestion_window_packets() == CongestionDefaults::INITIAL_WINDOW_PACKETS);
 
     // 34 full packets: the window (32 packets) is full
     for (uint64_t pn = 1; pn <= 34; pn++)

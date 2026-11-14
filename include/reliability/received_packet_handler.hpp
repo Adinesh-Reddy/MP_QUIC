@@ -6,12 +6,17 @@
 
 using namespace std;
 
-// Same values as the reference implementation
-const uint64_t ACK_SEND_DELAY_US = 25 * 1000;       // delayed ACK timer (25 ms)
-const int RETRANSMITTABLE_PACKETS_BEFORE_ACK = 2;   // ACK at least every 2nd data packet
+// When the receiver of a path sends its ACKs
+namespace AckPolicy
+{
+    // A lone data packet is acknowledged after this delay, hoping a second one joins it
+    constexpr uint64_t DELAY_US = 25 * 1000;
+    // ... but never more than this many data packets go unacknowledged
+    constexpr int DATA_PACKETS_PER_ACK = 2;
+}
 
-// Receiver side of one path: remembers which packet numbers arrived on this path
-// and decides when an ACK frame has to be sent back.
+// Receiver side of one path: keeps track of the packet numbers that arrived on this path
+// and decides when an ACK frame must go back.
 class ReceivedPacketHandler
 {
 public:
@@ -19,16 +24,16 @@ public:
     bool is_duplicate(uint64_t packet_number) const;
 
     // Must be called for every packet received on this path.
-    // should_instigate_ack = the packet has at least one retransmittable frame.
+    // should_instigate_ack = the packet carries at least one frame that must be acknowledged.
     // Returns false if the packet number is invalid (packet numbers start at 1).
     bool received_packet(uint64_t packet_number, bool should_instigate_ack, uint64_t now_us);
 
-    // Returns true and fills out_ack when an ACK has to be sent now
-    // (an ACK is queued, or the delayed ACK timer expired).
+    // Returns true and fills out_ack when an ACK must be sent now
+    // (one was requested, or the delayed-ACK timer ran out).
     // The caller sets the path_id of the frame.
     bool get_ack_frame(uint64_t now_us, AckFrame &out_ack);
 
-    // Time at which the delayed ACK must be sent, 0 if the timer is not running
+    // Time at which the delayed ACK is due, 0 if the timer is off
     uint64_t get_alarm_timeout() const;
 
     uint64_t get_largest_observed() const;
@@ -36,28 +41,27 @@ public:
     size_t get_num_ranges() const;
 
 private:
-    void add_to_history(uint64_t packet_number);
-    void maybe_queue_ack(uint64_t packet_number, bool should_instigate_ack, uint64_t now_us);
+    void remember(uint64_t packet_number);
+    void decide_ack(uint64_t packet_number, bool needs_ack, uint64_t now_us);
 
-    // Received packet numbers stored as ranges: first -> last, lowest range first
-    map<uint64_t, uint64_t> ranges;
+    // Received packet numbers as ranges first -> last, lowest range first
+    map<uint64_t, uint64_t> received_ranges;
 
-    uint64_t largest_observed = 0;
-    uint64_t largest_observed_received_time = 0;
+    uint64_t highest_seen = 0;
+    uint64_t highest_seen_at_us = 0;
 
-    // Packets with a number <= lower_limit are not acknowledged anymore
-    // (their range was dropped because more than MAX_ACK_RANGES ranges existed)
-    uint64_t lower_limit = 0;
+    // Numbers up to this one are no longer reported: their range was dropped when
+    // there were more than MAX_ACK_RANGES of them
+    uint64_t forgotten_up_to = 0;
 
-    int packets_received_since_last_ack = 0;
-    int retransmittable_packets_received_since_last_ack = 0;
-    bool ack_queued = false;
-    uint64_t ack_alarm = 0;
+    int unacked_data_packets = 0;
+    bool ack_now = false;
+    uint64_t delayed_ack_deadline_us = 0;
 
-    bool has_last_ack = false;
-    uint64_t last_ack_largest_acked = 0;
+    bool sent_an_ack = false;
+    uint64_t highest_in_last_ack = 0;
 
-    uint64_t packets = 0;
+    uint64_t total_received = 0;
 };
 
 #endif

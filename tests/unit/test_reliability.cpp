@@ -122,11 +122,11 @@ void test_received_packet_handler_ack_rules()
 
     // One data packet alone: delayed ACK timer (25 ms)
     assert(h.received_packet(2, true, T0 + 1000));
-    assert(h.get_alarm_timeout() == T0 + 1000 + ACK_SEND_DELAY_US);
+    assert(h.get_alarm_timeout() == T0 + 1000 + AckPolicy::DELAY_US);
     assert(!h.get_ack_frame(T0 + 10000, ack));
-    assert(h.get_ack_frame(T0 + 1000 + ACK_SEND_DELAY_US, ack));
+    assert(h.get_ack_frame(T0 + 1000 + AckPolicy::DELAY_US, ack));
     assert(ack.largest_acked == 2);
-    assert(ack.ack_delay_us == ACK_SEND_DELAY_US); // the time we held packet 2
+    assert(ack.ack_delay_us == AckPolicy::DELAY_US); // the time we held packet 2
     assert(ack.ranges.size() == 1 && ack.ranges[0].first == 1 && ack.ranges[0].last == 2);
     assert(h.get_alarm_timeout() == 0);
 
@@ -320,7 +320,7 @@ void test_sending_allowed()
     RttStats rtt;
     FixedWindowCongestion congestion(4); // 4 packets = 5840 bytes
     SentPacketHandler h(&rtt, &congestion);
-    assert(congestion.get_congestion_window() == 4 * DEFAULT_TCP_MSS);
+    assert(congestion.get_congestion_window() == 4 * CongestionDefaults::MSS_BYTES);
 
     uint64_t pn = 1;
     while (h.sending_allowed())

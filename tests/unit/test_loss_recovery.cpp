@@ -229,14 +229,14 @@ void test_flow_controller_sender()
     std::cout << "[TEST] Flow control: the sender stops at the advertised window...\n";
 
     FlowController fc(5, true);
-    assert(fc.send_window_size() == RECEIVE_STREAM_FLOW_CONTROL_WINDOW);
+    assert(fc.send_window_size() == FlowWindows::STREAM_INITIAL);
 
-    fc.add_bytes_sent(RECEIVE_STREAM_FLOW_CONTROL_WINDOW);
+    fc.add_bytes_sent(FlowWindows::STREAM_INITIAL);
     assert(fc.send_window_size() == 0); // blocked
 
     // A WINDOW_UPDATE moves the window forward
     assert(fc.update_send_window(65536));
-    assert(fc.send_window_size() == 65536 - RECEIVE_STREAM_FLOW_CONTROL_WINDOW);
+    assert(fc.send_window_size() == 65536 - FlowWindows::STREAM_INITIAL);
 
     // An old WINDOW_UPDATE that arrives late never moves the window backwards
     assert(!fc.update_send_window(40000));
@@ -267,7 +267,7 @@ void test_flow_controller_receiver()
     FlowController fc(5, true);
     uint64_t new_increment = 0;
     uint64_t new_offset = 0;
-    const uint64_t window = RECEIVE_STREAM_FLOW_CONTROL_WINDOW; // 32768
+    const uint64_t window = FlowWindows::STREAM_INITIAL; // 32768
 
     // Highest received offset: only grows
     assert(fc.update_highest_received(1000) == 1000);
@@ -318,8 +318,8 @@ void test_flow_control_manager()
 {
     std::cout << "[TEST] Flow control: stream level and connection level together...\n";
 
-    const uint64_t stream_window = RECEIVE_STREAM_FLOW_CONTROL_WINDOW;   // 32768
-    const uint64_t conn_window = RECEIVE_CONNECTION_FLOW_CONTROL_WINDOW; // 49152
+    const uint64_t stream_window = FlowWindows::STREAM_INITIAL;   // 32768
+    const uint64_t conn_window = FlowWindows::CONNECTION_INITIAL; // 49152
 
     // ---- Sender side ----
     FlowControlManager sender;
@@ -477,7 +477,7 @@ void test_tail_loss_probe_and_rto()
         assert(h.sent_packet(pn, data_frames(), 1000, T0 + (pn - 1) * 1000));
 
     // No RTT sample yet: default RTO of 500 ms after the last packet
-    assert(h.get_alarm_timeout() == T0 + 5000 + DEFAULT_RTO_TIMEOUT_US);
+    assert(h.get_alarm_timeout() == T0 + 5000 + LossRecovery::INITIAL_RTO_US);
 
     // ACK for packet 1 -> RTT 50 ms (deviation 25 ms). Then silence: 2..6 stay outstanding.
     AckFrame ack;
@@ -506,7 +506,7 @@ void test_tail_loss_probe_and_rto()
     assert(rto_calls == 0);
 
     // Both probes are used: now the RTO. RTT + 4 * deviation = 150 ms, but at least 200 ms.
-    assert(h.get_alarm_timeout() == T0 + 5000 + MIN_RTO_TIMEOUT_US);
+    assert(h.get_alarm_timeout() == T0 + 5000 + LossRecovery::MIN_RTO_US);
 
     // 1st RTO, the path is still alive: only the two oldest packets are retransmitted
     h.on_alarm(T0 + 500000);
@@ -519,12 +519,12 @@ void test_tail_loss_probe_and_rto()
     assert(h.get_num_outstanding() == 1); // 4
 
     // Exponential backoff: the next RTO is twice as long, counted from this RTO
-    assert(h.get_alarm_timeout() == T0 + 500000 + 2 * MIN_RTO_TIMEOUT_US);
+    assert(h.get_alarm_timeout() == T0 + 500000 + 2 * LossRecovery::MIN_RTO_US);
 
     // 2nd RTO, this time the path is reported as potentially failed: everything is retransmitted
     assert(h.sent_packet(7, data_frames(), 1000, T0 + 600000));
     assert(h.sent_packet(8, data_frames(), 1000, T0 + 601000));
-    assert(h.get_alarm_timeout() == T0 + 601000 + 2 * MIN_RTO_TIMEOUT_US);
+    assert(h.get_alarm_timeout() == T0 + 601000 + 2 * LossRecovery::MIN_RTO_US);
 
     path_failed = true;
     h.on_alarm(T0 + 1100000);

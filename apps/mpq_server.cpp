@@ -20,8 +20,7 @@ using namespace std;
 // read in pieces of FILE_CHUNK_SIZE bytes, from the tick of the event loop, whenever less
 // than SEND_BUFFER_TARGET bytes of it wait to be sent. So a 1 GB file costs about 2 MB of
 // memory, and no packet waits for the disk: ACKs keep leaving while the file is sent.
-// (In the reference Go code the stream's Write blocks the application's goroutine until the
-// packer has taken the data; this does the same with a single thread.)
+// This is back-pressure on a single thread: the file is only read as fast as packets leave.
 
 const size_t FILE_CHUNK_SIZE = 64 * 1024;          // bytes read from the file at once
 const size_t SEND_BUFFER_TARGET = 2 * 1024 * 1024; // refill the stream when less than this waits
@@ -121,7 +120,7 @@ static void answer_request(ConnectionState &state, uint32_t stream_id, const str
     {
         long id = 0, reply_size = 0;
         words >> id >> reply_size;
-        reply_size = max(1L, min(reply_size, 1024L * 1024L));
+        reply_size = clamp(reply_size, 1L, 1024L * 1024L); // 1 byte to 1 MB
 
         vector<uint8_t> reply(static_cast<size_t>(reply_size), 'r');
         connection->write(stream_id, reply.data(), reply.size());
@@ -294,11 +293,11 @@ int main(int argc, char **argv)
         }
 
         // The next pieces of the files being sent; server.on_tick() then puts them in packets
-        for (auto &entry : states)
+        for (auto &[id, state] : states)
         {
-            if (!entry.second->transfers.empty() && !entry.second->connection->is_closed())
+            if (!state->transfers.empty() && !state->connection->is_closed())
             {
-                send_file_pieces(*entry.second);
+                send_file_pieces(*state);
             }
         }
 

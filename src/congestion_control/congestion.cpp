@@ -37,5 +37,5 @@ string FixedWindowCongestion::get_name() const
 
 uint64_t FixedWindowCongestion::get_congestion_window() const
 {
-    return congestion_window * DEFAULT_TCP_MSS;
+    return congestion_window * CongestionDefaults::MSS_BYTES;
 }

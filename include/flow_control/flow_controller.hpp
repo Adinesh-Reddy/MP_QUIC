@@ -6,18 +6,23 @@
 
 using namespace std;
 
-// Same values as the reference implementation. There they are exchanged during the
-// handshake, we have no handshake, so both hosts simply start with the same constants.
-const uint64_t RECEIVE_STREAM_FLOW_CONTROL_WINDOW         = 32 * 1024;        // 32 kB
-const uint64_t RECEIVE_CONNECTION_FLOW_CONTROL_WINDOW     = 48 * 1024;        // 48 kB
-const uint64_t MAX_RECEIVE_STREAM_FLOW_CONTROL_WINDOW     = 16 * 1024 * 1024; // 16 MB (value used in the paper)
-const uint64_t MAX_RECEIVE_CONNECTION_FLOW_CONTROL_WINDOW = 24 * 1024 * 1024; // 24 MB
-const double CONNECTION_FLOW_CONTROL_MULTIPLIER = 1.5;
+// Receive windows. With no handshake to negotiate them, both hosts start from the same
+// values. The windows then grow by auto-tuning (doubling) up to the maximums.
+namespace FlowWindows
+{
+    constexpr uint64_t STREAM_INITIAL = 32 * 1024;            // 32 kB
+    constexpr uint64_t CONNECTION_INITIAL = 48 * 1024;        // 48 kB
+    constexpr uint64_t STREAM_MAX = 16 * 1024 * 1024;         // 16 MB
+    constexpr uint64_t CONNECTION_MAX = 24 * 1024 * 1024;     // 24 MB
+    // The connection window is kept at least this many times a growing stream window,
+    // so that the connection level never becomes the bottleneck of a single stream
+    constexpr double CONNECTION_FACTOR = 1.5;
+}
 
 // Flow control of one stream, or of the whole connection (stream_id 0).
 // All the windows are absolute byte offsets, like in the WINDOW_UPDATE frame.
-//   Sender side:   we may send until bytes_sent reaches send_window.
-//   Receiver side: the peer may send until receive_window, which we move
+//   Sender side:   we may send until sent_bytes reaches send_limit.
+//   Receiver side: the peer may send until advertised_limit, which we move
 //                  forward (with a WINDOW_UPDATE) as the application reads data.
 class FlowController
 {
@@ -62,25 +67,25 @@ public:
     uint64_t get_bytes_read() const;
 
 private:
-    void maybe_adjust_window_increment(uint64_t now_us, uint64_t rtt_us);
+    void autotune_step(uint64_t now_us, uint64_t rtt_us);
 
     uint32_t stream_id;
     bool contributes_to_connection;
 
-    uint64_t bytes_sent = 0;
-    uint64_t send_window = 0;
+    uint64_t sent_bytes = 0;
+    uint64_t send_limit = 0;
 
-    uint64_t last_window_update_time = 0; // 0 = never
+    uint64_t last_update_us = 0; // 0 = never
 
-    uint64_t bytes_read = 0;
-    uint64_t highest_received = 0;
-    uint64_t receive_window = 0;
-    uint64_t receive_window_increment = 0;
-    uint64_t max_receive_window_increment = 0;
+    uint64_t read_bytes = 0;
+    uint64_t highest_offset = 0;
+    uint64_t advertised_limit = 0;
+    uint64_t window_step = 0;
+    uint64_t max_window_step = 0;
 };
 
-// Keeps the flow controller of every stream plus the one of the connection,
-// and applies every operation to both levels.
+// Holds one flow controller per stream plus the connection-wide one, and applies
+// every operation at both levels.
 class FlowControlManager
 {
 public:
@@ -110,8 +115,8 @@ public:
     FlowController *get_flow_controller(uint32_t stream_id);
 
 private:
-    map<uint32_t, FlowController> stream_flow_controllers;
-    FlowController connection_flow_controller;
+    map<uint32_t, FlowController> per_stream;
+    FlowController connection_level;
 };
 
 #endif

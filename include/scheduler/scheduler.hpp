@@ -28,15 +28,14 @@ public:
     virtual string get_name() const = 0;
 };
 
-// The scheduler of the paper (Section 3, Packet Scheduling), same rules as the
-// reference implementation:
-//   1. A path whose congestion window is full is not used (except for retransmissions).
-//   2. A potentially failed path is not used.
-//   3. Among the remaining paths the one with the lowest smoothed RTT is taken.
-//   4. A path whose RTT is not known yet (no ACK received on it) loses against a path with
-//      a known RTT. If no RTT is known at all, the path that sent the fewest packets is taken.
-//   5. While the RTT of the chosen path is unknown, the data is duplicated on another path,
-//      so a new path can be used at once without risking that its data arrives very late.
+// Lowest-RTT scheduling. For every packet:
+//   1. Skip a path whose congestion window is full (retransmissions may still use it).
+//   2. Skip a path marked potentially failed.
+//   3. Of the paths left, take the one with the smallest smoothed RTT.
+//   4. A path with no RTT yet (nothing acknowledged on it) loses against any path with one.
+//      When no path has an RTT, take the one that has carried the fewest packets.
+//   5. While the chosen path has no RTT, its data is also copied onto another path. A fresh
+//      path is then used right away, without the risk of its data arriving very late.
 class LowestRttScheduler : public Scheduler
 {
 public:
@@ -45,11 +44,11 @@ public:
     void on_packet_sent(Path *path) override;
     string get_name() const override;
 
-    // Number of packets this scheduler placed on a path ("quota" in the reference implementation)
-    uint64_t get_quota(uint8_t path_id) const;
+    // Number of packets this scheduler has placed on a path
+    uint64_t packets_placed_on(uint8_t path_id) const;
 
 private:
-    map<uint8_t, uint64_t> quotas;
+    map<uint8_t, uint64_t> packets_placed;
 };
 
 #endif

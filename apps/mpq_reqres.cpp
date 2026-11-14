@@ -6,14 +6,14 @@
 
 using namespace std;
 
-// mpq_reqres: request/response traffic, the network handover experiment of the paper
-// (Section 4.3). The client sends a small request at regular intervals; the server
+// mpq_reqres: request/response traffic for the network handover experiment. The client
+// sends a small request at regular intervals; the server
 // (mpq_server) answers each one at once. The program measures, for every request, the
 // time until the whole answer is back.
 //
 //   mpq_reqres --server 10.0.0.2:4433 --local 10.0.0.1 --local 10.0.1.1 --out delays.csv
 //
-// Default values are the ones of the paper: 750 bytes every 400 ms.
+// Defaults: 750-byte requests, one every 400 ms.
 // Every request uses its own stream (1, 3, 5, ...).
 
 static void usage()

@@ -75,7 +75,7 @@ void test_unknown_rtt()
     assert(scheduler.select_path(paths, false) == &p0);
 
     scheduler.on_packet_sent(&p0);
-    assert(scheduler.get_quota(0) == 1 && scheduler.get_quota(1) == 0);
+    assert(scheduler.packets_placed_on(0) == 1 && scheduler.packets_placed_on(1) == 0);
     assert(scheduler.select_path(paths, false) == &p1);
 
     scheduler.on_packet_sent(&p1);

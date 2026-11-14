@@ -117,9 +117,8 @@ bool read_file(const string &path, vector<uint8_t> &out)
 
 void print_path_statistics(Connection &connection)
 {
-    for (const auto &entry : connection.get_paths())
+    for (const auto &[path_id, path] : connection.get_paths())
     {
-        Path *path = entry.second;
         SentPacketHandler *sent = path->get_sent_packet_handler();
         ReceivedPacketHandler *received = path->get_received_packet_handler();
         OliaSender *olia = path->get_congestion();
@@ -182,9 +181,8 @@ void StatsWriter::sample(Connection &connection, uint64_t bytes_transferred)
         start_us = Packet::current_time_us();
     }
     uint64_t time_ms = (Packet::current_time_us() - start_us) / 1000;
-    for (const auto &entry : connection.get_paths())
+    for (const auto &[path_id, path] : connection.get_paths())
     {
-        Path *path = entry.second;
         SentPacketHandler *sent = path->get_sent_packet_handler();
         OliaSender *olia = path->get_congestion();
 

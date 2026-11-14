@@ -9,64 +9,64 @@ bool StreamFrameSorter::push(uint64_t offset, const vector<uint8_t> &data)
     uint64_t start = offset;
     uint64_t end = offset + data.size();
 
-    // Bytes below read_position were already delivered
-    if (start < read_position)
+    // Bytes below delivered_up_to were already delivered
+    if (start < delivered_up_to)
     {
-        start = read_position;
+        start = delivered_up_to;
     }
     if (start >= end)
     {
         return false;
     }
 
-    bool inserted = false;
-    uint64_t cur = start; // first byte of the frame we still have to place
+    bool stored_something = false;
+    uint64_t cursor = start; // first byte of the frame we still have to place
 
-    // it = first chunk that starts after cur
-    auto it = chunks.upper_bound(cur);
+    // it = first chunk that starts after cursor
+    auto it = waiting.upper_bound(cursor);
 
     // The chunk before it may already cover the beginning of the frame
-    if (it != chunks.begin())
+    if (it != waiting.begin())
     {
-        auto prev_it = it;
-        --prev_it;
-        uint64_t prev_end = prev_it->first + prev_it->second.size();
-        if (prev_end > cur)
+        auto before = it;
+        --before;
+        uint64_t before_end = before->first + before->second.size();
+        if (before_end > cursor)
         {
-            cur = prev_end;
+            cursor = before_end;
         }
     }
 
     // Walk over the frame and store only the parts that fall in a hole
-    while (cur < end)
+    while (cursor < end)
     {
-        uint64_t next_start = (it != chunks.end()) ? it->first : end;
+        uint64_t next_start = (it != waiting.end()) ? it->first : end;
         uint64_t piece_end = min(end, next_start);
 
-        if (piece_end > cur)
+        if (piece_end > cursor)
         {
-            chunks[cur] = vector<uint8_t>(data.begin() + (cur - offset), data.begin() + (piece_end - offset));
-            buffered_bytes += piece_end - cur;
-            inserted = true;
+            waiting[cursor] = vector<uint8_t>(data.begin() + (cursor - offset), data.begin() + (piece_end - offset));
+            waiting_bytes += piece_end - cursor;
+            stored_something = true;
         }
 
-        if (it == chunks.end() || next_start >= end)
+        if (it == waiting.end() || next_start >= end)
         {
             break;
         }
 
         // Skip the bytes we already have and continue after that chunk
-        cur = max(cur, it->first + it->second.size());
+        cursor = max(cursor, it->first + it->second.size());
         ++it;
     }
 
-    return inserted;
+    return stored_something;
 }
 
 bool StreamFrameSorter::pop(uint64_t &offset, vector<uint8_t> &data)
 {
-    auto it = chunks.begin();
-    if (it == chunks.end() || it->first != read_position)
+    auto it = waiting.begin();
+    if (it == waiting.end() || it->first != delivered_up_to)
     {
         return false; // the next byte is still missing
     }
@@ -74,23 +74,23 @@ bool StreamFrameSorter::pop(uint64_t &offset, vector<uint8_t> &data)
     offset = it->first;
     data = it->second;
 
-    read_position += data.size();
-    buffered_bytes -= data.size();
-    chunks.erase(it);
+    delivered_up_to += data.size();
+    waiting_bytes -= data.size();
+    waiting.erase(it);
     return true;
 }
 
 uint64_t StreamFrameSorter::get_read_position() const
 {
-    return read_position;
+    return delivered_up_to;
 }
 
 size_t StreamFrameSorter::get_num_chunks() const
 {
-    return chunks.size();
+    return waiting.size();
 }
 
 uint64_t StreamFrameSorter::get_buffered_bytes() const
 {
-    return buffered_bytes;
+    return waiting_bytes;
 }

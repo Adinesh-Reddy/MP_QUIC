@@ -172,8 +172,8 @@ int main(int argc, char **argv)
         }
     });
 
-    // The request. The time of the transfer starts with the first packet of the connection
-    // and ends when the last byte of the file is received (as in the paper).
+    // The request. The transfer is timed from the first packet of the connection
+    // until the last byte of the file has arrived.
     string request = "GET " + name + "\n";
     start_us = Packet::current_time_us();
     connection->write(STREAM_ID, reinterpret_cast<const uint8_t *>(request.data()), request.size());

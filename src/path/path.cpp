@@ -112,34 +112,35 @@ bool Path::get_ack_frame(uint64_t now_us, AckFrame &out_ack)
 
 uint64_t Path::get_last_network_activity_time()
 {
-    return last_network_activity_time;
+    return last_heard_us;
 }
 
 void Path::set_last_network_activity_time(uint64_t time_us)
 {
-    last_network_activity_time = time_us;
+    last_heard_us = time_us;
 }
 
 bool Path::on_rto(uint64_t last_sent_time_us)
 {
-    // Was there any activity on this path since the last packet we sent?
-    if (last_network_activity_time < last_sent_time_us)
+    // Something arrived after our last data packet left: the path is slow, not broken
+    if (last_heard_us >= last_sent_time_us)
     {
-        potentially_failed = true;
-        cout << "Path " << (int)path_id << " may be broken (marked \"potentially failed\"): nothing came back on it "
-             << "before the retransmission timer (RTO) ran out. Its unacknowledged packets will be sent again, "
-             << "on another path if there is one.\n";
-        return true;
+        return false;
     }
-    return false;
+
+    looks_broken = true;
+    cout << "Path " << (int)path_id << " may be broken (marked \"potentially failed\"): nothing came back on it "
+         << "before the retransmission timer (RTO) ran out. Its unacknowledged packets will be sent again, "
+         << "on another path if there is one.\n";
+    return true;
 }
 
 bool Path::is_potentially_failed()
 {
-    return potentially_failed;
+    return looks_broken;
 }
 
 void Path::set_potentially_failed(bool failed)
 {
-    potentially_failed = failed;
+    looks_broken = failed;
 }

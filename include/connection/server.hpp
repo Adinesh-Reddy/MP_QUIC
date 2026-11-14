@@ -73,7 +73,7 @@ private:
     ConnectionCallback new_connection_callback = nullptr;
     ConnectionCallback connection_closed_callback = nullptr;
     uint64_t connections_accepted = 0;
-    uint64_t idle_timeout_us = DEFAULT_IDLE_TIMEOUT_US;
+    uint64_t idle_timeout_us = Connection::DEFAULT_IDLE_TIMEOUT_US;
 };
 
 #endif
