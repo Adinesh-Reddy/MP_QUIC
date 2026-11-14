@@ -57,6 +57,11 @@ public:
     void write(uint32_t stream_id, const uint8_t *data, size_t length);
     void close_stream(uint32_t stream_id);
 
+    // Bytes written on this stream that were not put in a packet yet (0 for an unknown stream).
+    // An application that sends a large file writes the next piece only when this is small,
+    // so it never has to read the whole file at once and the event loop is never blocked.
+    size_t unsent_bytes(uint32_t stream_id) const;
+
     // Give every UDP datagram received for this connection to this function
     void handle_packet(const uint8_t *data, size_t length);
 

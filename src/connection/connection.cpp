@@ -142,6 +142,16 @@ void Connection::close_stream(uint32_t stream_id)
     it->second.close();
 }
 
+size_t Connection::unsent_bytes(uint32_t stream_id) const
+{
+    auto it = send_streams.find(stream_id);
+    if (it == send_streams.end())
+    {
+        return 0;
+    }
+    return it->second.get_unsent_bytes();
+}
+
 bool Connection::has_new_stream_data() const
 {
     for (const auto &entry : send_streams)

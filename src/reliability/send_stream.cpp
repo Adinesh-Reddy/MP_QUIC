@@ -14,6 +14,11 @@ uint32_t SendStream::get_stream_id() const
     return stream_id;
 }
 
+size_t SendStream::get_unsent_bytes() const
+{
+    return buffer.size();
+}
+
 void SendStream::write(const uint8_t *data, size_t length)
 {
     if (closed || data == nullptr || length == 0)
