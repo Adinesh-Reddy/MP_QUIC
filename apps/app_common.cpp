@@ -12,7 +12,7 @@ Arguments::Arguments(int argc, char **argv, const set<string> &flags)
         string arg = argv[i];
         if (arg.size() < 3 || arg.substr(0, 2) != "--")
         {
-            error_message = "unexpected argument: " + arg;
+            error_message = "\"" + arg + "\" is not an option (every option starts with --, see the list below)";
             return;
         }
         string name = arg.substr(2);
@@ -24,7 +24,7 @@ Arguments::Arguments(int argc, char **argv, const set<string> &flags)
         }
         if (i + 1 >= argc)
         {
-            error_message = "missing value for --" + name;
+            error_message = "the option --" + name + " needs a value after it";
             return;
         }
         values[name].push_back(argv[++i]);

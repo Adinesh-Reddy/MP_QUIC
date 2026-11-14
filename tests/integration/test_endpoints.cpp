@@ -169,7 +169,7 @@ void test_multihomed_server()
     assert(server_paths == 2);
     assert(server_path1_remote == "127.0.1.2");
     assert(server_closed_by_peer);
-    assert(server_close_reason == "closed by the peer: transfer complete");
+    assert(server_close_reason == "the other side closed the connection (its reason: transfer complete)");
 
     // A late packet of the closed connection must not open a new one
     Packet late(FLAG_NONE, connection->get_connection_id(), 0, 999999);
@@ -372,7 +372,7 @@ void test_idle_timeout()
     assert(run_until(manager, server, client, [&]() { return server.get_num_connections() == 0; }, 5000, false));
     uint64_t waited_ms = (Packet::current_time_us() - start_us) / 1000;
 
-    assert(close_reason == "idle timeout");
+    assert(close_reason == "nothing was received from the other side for 300 ms (idle timeout)");
     assert(!closed_by_peer);
     assert(waited_ms >= 250 && waited_ms < 2000);
     std::cout << "[Server] connection closed after " << waited_ms << " ms of silence\n";

@@ -127,7 +127,7 @@ private:
     void handle_frame(const Frame &frame, const Packet &packet, uint64_t now_us);
     void handle_stream_frame(const StreamFrame &frame, uint64_t now_us);
 
-    void close_with_error(const string &reason);
+    void close_with_error(const string &reason, uint32_t error_code = CLOSE_PROTOCOL_ERROR);
     void send_connection_close(uint32_t error_code, const string &reason);
 
     uint64_t connection_id;

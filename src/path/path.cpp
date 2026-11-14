@@ -23,7 +23,7 @@ ssize_t Path::send(const uint8_t *data, size_t length)
 {
     if (socket == nullptr || !socket->isValid())
     {
-        cout << "Cannot send on Path " << (int)path_id << ": socket is invalid\n";
+        cout << "Error: cannot send on path " << (int)path_id << " because its socket is not open\n";
         return -1;
     }
     return socket->sendTo(data, length, remote_ip, remote_port);
@@ -126,7 +126,9 @@ bool Path::on_rto(uint64_t last_sent_time_us)
     if (last_network_activity_time < last_sent_time_us)
     {
         potentially_failed = true;
-        cout << "Path " << (int)path_id << " is potentially failed (RTO without any network activity)\n";
+        cout << "Path " << (int)path_id << " may be broken (marked \"potentially failed\"): nothing came back on it "
+             << "before the retransmission timer (RTO) ran out. Its unacknowledged packets will be sent again, "
+             << "on another path if there is one.\n";
         return true;
     }
     return false;

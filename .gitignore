@@ -8,5 +8,5 @@ evaluation/results/
 
 .vscode
 
-# Random test files made by evaluation/scripts/start_server.sh
+# Random test files for the evaluation (made by hand, see docs/vm/server.md)
 evaluation/files/

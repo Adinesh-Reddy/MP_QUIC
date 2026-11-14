@@ -283,7 +283,8 @@ void Frame::serialize(vector<uint8_t> &out) const
     {
         if (stream.data.size() > UINT16_MAX)
         {
-            throw length_error("STREAM frame data exceeds 65535 bytes");
+            throw length_error("STREAM frame carries too much data: " + to_string(stream.data.size()) +
+                               " bytes, the limit is 65535 bytes");
         }
         put_u32(out, stream.stream_id);
         put_u64(out, stream.offset);
@@ -322,7 +323,8 @@ void Frame::serialize(vector<uint8_t> &out) const
             in_addr ipv4;
             if (inet_pton(AF_INET, add_address.addresses[i].ip.c_str(), &ipv4) != 1)
             {
-                throw invalid_argument("ADD_ADDRESS frame: invalid IPv4 address " + add_address.addresses[i].ip);
+                throw invalid_argument("Cannot put \"" + add_address.addresses[i].ip +
+                                       "\" in an ADD_ADDRESS frame: it is not an IPv4 address");
             }
             const uint8_t *p = reinterpret_cast<const uint8_t *>(&ipv4.s_addr);
             out.insert(out.end(), p, p + 4);

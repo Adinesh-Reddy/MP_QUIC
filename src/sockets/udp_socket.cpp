@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstring>
+#include <cerrno>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -14,7 +15,7 @@ UDPSocket::UDPSocket()
     fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
     if (fd < 0)
     {
-        cout << "Error in creation of socket in UDPSocket class\n";
+        cout << "Error: could not create a UDP socket (" << strerror(errno) << ")\n";
     }
 }
 
@@ -34,17 +35,27 @@ bool UDPSocket::bind(const string &ip, uint16_t port)
 
     if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) <= 0)
     {
-        cout << "Invalid IP address: " << ip << "\n";
+        cout << "Error: \"" << ip << "\" is not a valid IPv4 address (example of a good one: 10.0.0.1)\n";
         return false;
     }
 
     if (::bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
-        cout << "Bind failed on " << ip << ":" << port << " - " << strerror(errno) << "\n";
+        int reason = errno;
+        cout << "Error: could not use the address " << ip << ":" << port << " (" << strerror(reason) << ")\n";
+        // The usual causes, with what to do
+        if (reason == EADDRNOTAVAIL)
+            cout << "  This computer does not have the address " << ip
+                 << ". Check its addresses with: ip -br -4 addr\n";
+        else if (reason == EADDRINUSE)
+            cout << "  Another program already uses port " << port
+                 << ". Maybe an old mpq_server is still running: stop it with: pkill mpq_server\n";
+        else if (reason == EACCES)
+            cout << "  Ports below 1024 need root. Use a higher port, for example 4433.\n";
         return false;
     }
 
-    cout << "Socket bound to " << ip << ":" << port << "\n";
+    cout << "Opened a UDP socket on " << ip << ":" << get_local_port() << "\n";
     return true;
 }
 
@@ -59,14 +70,20 @@ ssize_t UDPSocket::sendTo(const uint8_t *data, size_t length, const string &dest
 
     if (inet_pton(AF_INET, dest_ip.c_str(), &dest_addr.sin_addr) <= 0)
     {
-        cout << "Invalid destination IP: " << dest_ip << "\n";
+        cout << "Error: cannot send, \"" << dest_ip << "\" is not a valid IPv4 address\n";
         return -1;
     }
 
     ssize_t sent = sendto(fd, data, length, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (sent < 0)
     {
-        cout << "sendto failed: " << strerror(errno) << "\n";
+        int reason = errno;
+        cout << "Could not send a packet to " << dest_ip << ":" << dest_port << " (" << strerror(reason) << ")";
+        if (reason == ENETUNREACH || reason == EHOSTUNREACH)
+            cout << ": there is no route to this address, check the cable and the routes of this path";
+        else if (reason == EAGAIN || reason == EWOULDBLOCK || reason == ENOBUFS)
+            cout << ": the send buffer is full, this packet is dropped and will be sent again later";
+        cout << "\n";
     }
     return sent;
 }

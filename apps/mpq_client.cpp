@@ -42,7 +42,8 @@ int main(int argc, char **argv)
     NetworkAddress server_address;
     if (!parse_address(args.get("server"), server_address))
     {
-        cout << "error: --server must be IP:PORT\n";
+        cout << "error: --server must be written as IP:PORT, for example --server 10.0.2.2:4433 (you wrote \""
+             << args.get("server") << "\")\n";
         return 2;
     }
 
@@ -55,27 +56,29 @@ int main(int argc, char **argv)
     {
         if (!client.add_local_address(ip))
         {
-            cout << "error: cannot use the local address " << ip << "\n";
+            cout << "error: cannot use the local address " << ip << " given with --local (the reason is above)\n";
             return 1;
         }
     }
     if (!client.connect(server_address.ip, server_address.port))
     {
-        cout << "error: cannot open the initial path\n";
+        cout << "error: could not create the first path to the server " << args.get("server") << "\n";
         return 1;
     }
 
     ofstream out(out_path, ios::binary | ios::trunc);
     if (!out)
     {
-        cout << "error: cannot write " << out_path << "\n";
+        cout << "error: cannot create the file " << out_path
+             << " given with --out (does the folder exist, and may you write there?)\n";
         return 1;
     }
 
     StatsWriter stats;
     if (args.has("stats") && !stats.open(args.get("stats")))
     {
-        cout << "error: cannot write " << args.get("stats") << "\n";
+        cout << "error: cannot create the file " << args.get("stats")
+             << " given with --stats (does the folder exist, and may you write there?)\n";
         return 1;
     }
 
@@ -115,7 +118,8 @@ int main(int argc, char **argv)
                 if (header.substr(0, 3) == "OK ")
                     expected_bytes = strtoull(header.c_str() + 3, nullptr, 10);
                 else
-                    error = "the server answered: " + header;
+                    error = "the server refused the request: " +
+                            (header.substr(0, 4) == "ERR " ? header.substr(4) : header);
             }
         }
 
@@ -156,13 +160,14 @@ int main(int argc, char **argv)
         }
         else if (connection->is_closed())
         {
-            error = "connection closed: " + connection->get_close_reason();
+            error = "the connection was closed before the end: " + connection->get_close_reason();
             manager.stop();
         }
         else if (Packet::current_time_us() - start_us > timeout_us)
         {
-            error = "timeout";
-            connection->close("client timeout");
+            error = "the file was not complete after " + to_string(timeout_us / 1000000) +
+                    " seconds (--timeout), so the client gave up";
+            connection->close("the client gave up waiting (timeout)");
             manager.stop();
         }
     });
@@ -181,11 +186,12 @@ int main(int argc, char **argv)
 
     if (error.empty() && !finished)
     {
-        error = "stopped before the end of the file";
+        error = "the transfer stopped before the whole file arrived";
     }
     if (error.empty() && received_bytes != expected_bytes)
     {
-        error = "received " + to_string(received_bytes) + " bytes, expected " + to_string(expected_bytes);
+        error = "received " + to_string(received_bytes) + " bytes, but the server said the file has " +
+                to_string(expected_bytes) + " bytes";
     }
 
     print_path_statistics(*connection);

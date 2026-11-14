@@ -193,12 +193,11 @@ string Connection::get_close_reason() const
     return close_reason;
 }
 
-void Connection::close_with_error(const string &reason)
+void Connection::close_with_error(const string &reason, uint32_t error_code)
 {
     if (!closed)
     {
         // The peer is told why, then we stop
-        uint32_t error_code = (reason == "idle timeout") ? CLOSE_IDLE_TIMEOUT : CLOSE_PROTOCOL_ERROR;
         send_connection_close(error_code, reason);
 
         closed = true;
@@ -714,7 +713,7 @@ void Connection::handle_frame(const Frame &frame, const Packet &packet, uint64_t
 
         if (!acked_path->get_sent_packet_handler()->received_ack(frame.ack, with_packet_number, now_us))
         {
-            close_with_error("received an ACK for a packet that was never sent");
+            close_with_error("the other side acknowledged a packet that we never sent (protocol error)");
         }
         break;
     }
@@ -735,10 +734,10 @@ void Connection::handle_frame(const Frame &frame, const Packet &packet, uint64_t
         // The peer is done (or gave up): nothing more will come, so we stop too
         closed = true;
         closed_by_peer = true;
-        close_reason = "closed by the peer";
+        close_reason = "the other side closed the connection";
         if (!frame.connection_close.reason.empty())
         {
-            close_reason += ": " + frame.connection_close.reason;
+            close_reason += " (its reason: " + frame.connection_close.reason + ")";
         }
         break;
     case FRAME_PATHS:
@@ -778,7 +777,7 @@ void Connection::handle_stream_frame(const StreamFrame &frame, uint64_t now_us)
     uint64_t max_offset = frame.offset + frame.data.size();
     if (!flow_control_manager.update_highest_received(stream_id, max_offset))
     {
-        close_with_error("flow control violation: the peer sent more data than the advertised window");
+        close_with_error("the other side sent more data than we allowed it to send (flow control limit broken)");
         return;
     }
 
@@ -820,7 +819,11 @@ void Connection::on_tick()
     // Idle timeout: the peer disappeared without closing the connection
     if (idle_timeout_us != 0 && now_us > last_activity_us && now_us - last_activity_us > idle_timeout_us)
     {
-        close_with_error("idle timeout");
+        // Shown in seconds, or in milliseconds when it is not a whole number of seconds (tests)
+        string limit = (idle_timeout_us % 1000000 == 0) ? to_string(idle_timeout_us / 1000000) + " s"
+                                                        : to_string(idle_timeout_us / 1000) + " ms";
+        close_with_error("nothing was received from the other side for " + limit + " (idle timeout)",
+                         CLOSE_IDLE_TIMEOUT);
         return;
     }
 
