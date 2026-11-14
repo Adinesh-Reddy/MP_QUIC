@@ -82,16 +82,6 @@ client                                                       server
            10.0.1.0/24                      10.0.3.0/24
 ```
 
-The scripts of `evaluation/scripts` are run from the project folder and find the interfaces by their addresses.
+**Step-by-step commands for the actual test bed** (KVM/virt-manager, Ubuntu Server client and server, **VyOS routers**, bridges `mpqa1 mpqa2 mpqb1 mpqb2`): see [docs/vm/README.md](docs/vm/README.md), one Markdown file per machine.
 
-| Script | Machine | What it does |
-|---|---|---|
-| `setup_addresses.sh client\|server\|router-a\|router-b IF1 IF2` | all four | Addresses, routes, forwarding on the routers |
-| `shape_links.sh [--rate-a 8mbit --delay-a 10ms --loss-a 0 ...]` | both routers, same command | Capacity, delay, loss and queue of the two paths (`show`, `clear`) |
-| `start_server.sh` | server | Test files, `mpq_server`, and the iperf3 servers for TCP, UDP and Multipath TCP |
-| `run_transfers.sh [--file F --runs N --label L]` | client | MP-QUIC download over two paths (either network first) and over one path, SHA-256 checked |
-| `run_baselines.sh [--bytes 20M --runs N --label L]` | client | UDP, TCP and Multipath TCP on the same links, with iperf3 |
-| `run_handover.sh [--single-path \| --no-cut]` | client | Request/response traffic, link A is cut after 3 s |
-| `summary.sh [--label L]` | client | Table of the goodputs and the experimental aggregation benefit of the paper |
-
-Measurements are written to `evaluation/results/` (`throughput.csv`, `handover_*.csv`).
+There are no evaluation scripts: each file of `docs/vm/` lists the commands to type on that machine (netplan file and `ethtool` on the client and server, `tc netem` on the routers, `mpq_server` and the two `iperf3` servers on the server, `mpq_client`, `iperf3`, `mptcpize run iperf3` and `mpq_reqres` on the client). The results table and the aggregation benefit (EBen) are filled in by hand ([docs/vm/benchmarks.md](docs/vm/benchmarks.md) 6.5).

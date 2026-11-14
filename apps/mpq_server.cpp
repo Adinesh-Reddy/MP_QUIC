@@ -61,12 +61,13 @@ static void answer_request(Connection *connection, uint32_t stream_id, const str
         {
             string reply = "ERR bad file name\n";
             connection->write(stream_id, reinterpret_cast<const uint8_t *>(reply.data()), reply.size());
+            cout << "GET " << name << ": refused, a file name cannot be empty or contain '/' or '..'\n";
         }
         else if (!read_file(dir + "/" + name, content))
         {
             string reply = "ERR file not found\n";
             connection->write(stream_id, reinterpret_cast<const uint8_t *>(reply.data()), reply.size());
-            cout << "GET " << name << ": not found\n";
+            cout << "GET " << name << ": there is no such file in " << dir << ", answered \"file not found\"\n";
         }
         else
         {
@@ -116,9 +117,15 @@ int main(int argc, char **argv)
     for (const string &text : args.get_all("listen"))
     {
         NetworkAddress address;
-        if (!parse_address(text, address) || !server.listen(address.ip, address.port))
+        if (!parse_address(text, address))
         {
-            cout << "error: cannot listen on " << text << "\n";
+            cout << "error: --listen must be written as IP:PORT, for example --listen 10.0.2.2:4433 (you wrote \""
+                 << text << "\")\n";
+            return 2;
+        }
+        if (!server.listen(address.ip, address.port))
+        {
+            cout << "error: cannot listen on " << text << " (the reason is above)\n";
             return 1;
         }
     }
@@ -126,7 +133,8 @@ int main(int argc, char **argv)
     StatsWriter stats;
     if (args.has("stats") && !stats.open(args.get("stats")))
     {
-        cout << "error: cannot write " << args.get("stats") << "\n";
+        cout << "error: cannot create the file " << args.get("stats")
+             << " given with --stats (does the folder exist, and may you write there?)\n";
         return 1;
     }
 

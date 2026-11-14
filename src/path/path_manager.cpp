@@ -132,8 +132,8 @@ Path *PathManager::on_packet_received(uint8_t path_id, UDPSocket *socket, const 
         // answer there, the state of the path is kept
         if (path->get_remote_ip() != remote_ip || path->get_remote_port() != remote_port)
         {
-            cout << "Path " << (int)path_id << ": the remote address changed to "
-                 << remote_ip << ":" << remote_port << "\n";
+            cout << "Path " << (int)path_id << ": the other side now sends from "
+                 << remote_ip << ":" << remote_port << ", so our packets now go there\n";
             path->set_remote_address(remote_ip, remote_port);
         }
         return path.get();

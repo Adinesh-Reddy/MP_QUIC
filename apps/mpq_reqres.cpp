@@ -41,7 +41,8 @@ int main(int argc, char **argv)
     NetworkAddress server_address;
     if (!parse_address(args.get("server"), server_address))
     {
-        cout << "error: --server must be IP:PORT\n";
+        cout << "error: --server must be written as IP:PORT, for example --server 10.0.2.2:4433 (you wrote \""
+             << args.get("server") << "\")\n";
         return 2;
     }
 
@@ -54,13 +55,13 @@ int main(int argc, char **argv)
     {
         if (!client.add_local_address(ip))
         {
-            cout << "error: cannot use the local address " << ip << "\n";
+            cout << "error: cannot use the local address " << ip << " given with --local (the reason is above)\n";
             return 1;
         }
     }
     if (!client.connect(server_address.ip, server_address.port))
     {
-        cout << "error: cannot open the initial path\n";
+        cout << "error: could not create the first path to the server " << args.get("server") << "\n";
         return 1;
     }
 
@@ -129,18 +130,24 @@ int main(int argc, char **argv)
         }
         else if (connection->is_closed())
         {
-            error = "connection closed: " + connection->get_close_reason();
+            error = "the connection was closed before the end: " + connection->get_close_reason();
             manager.stop();
         }
         else if (next_request == count && now_us > sent_us[count - 1] + 10ULL * 1000000ULL)
         {
             // 10 seconds after the last request: the missing answers will not come
-            connection->close("client timeout");
+            connection->close("the client stopped waiting for the missing answers (timeout)");
             manager.stop();
         }
     });
 
     manager.run(1);
+
+    if (error.empty() && answered < count)
+    {
+        error = to_string(count - answered) + " of " + to_string(count) +
+                " requests got no answer within 10 seconds after the last request";
+    }
 
     if (args.has("out"))
     {

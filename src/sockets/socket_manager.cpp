@@ -11,7 +11,8 @@ SocketManager::SocketManager()
     epoll_fd = epoll_create1(0);
     if (epoll_fd < 0)
     {
-        cout << "Failed to create epoll: " << strerror(errno) << "\n";
+        cout << "Error: could not start the event loop that waits for packets (epoll_create1: "
+             << strerror(errno) << ")\n";
     }
 }
 
@@ -38,7 +39,8 @@ bool SocketManager::add_socket(UDPSocket *sock)
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock->get_fd(), &event) < 0)
     {
-        cout << "epoll_ctl ADD failed: " << strerror(errno) << "\n";
+        cout << "Error: could not add a socket to the event loop, packets on it would not be read (epoll_ctl: "
+             << strerror(errno) << ")\n";
         return false;
     }
 
@@ -62,7 +64,7 @@ void SocketManager::run(int tick_ms)
         return;
 
     running = true;
-    cout << "SocketManager event loop started.\n";
+    cout << "Event loop started: waiting for packets.\n";
 
     epoll_event events[16];
     uint8_t buffer[65536];
@@ -75,7 +77,8 @@ void SocketManager::run(int tick_ms)
         {
             if (errno == EINTR)
                 continue;
-            cout << "epoll_wait error: " << strerror(errno) << "\n";
+            cout << "Error: waiting for packets failed, the event loop stops (epoll_wait: "
+                 << strerror(errno) << ")\n";
             break;
         }
 
@@ -108,7 +111,7 @@ void SocketManager::run(int tick_ms)
         }
     }
 
-    cout << "SocketManager event loop stopped.\n";
+    cout << "Event loop stopped.\n";
 }
 
 void SocketManager::stop()

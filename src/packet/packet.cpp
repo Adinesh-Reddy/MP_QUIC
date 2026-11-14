@@ -117,7 +117,8 @@ vector<uint8_t> Packet::serialize() const
     size_t total_size = size();
     if (total_size > MAX_PACKET_SIZE)
     {
-        throw length_error("Packet exceeds maximum packet size (1350 bytes)");
+        throw length_error("Packet is too big: " + to_string(total_size) + " bytes, the limit is " +
+                           to_string(MAX_PACKET_SIZE) + " bytes");
     }
 
     vector<uint8_t> buffer(HEADER_SIZE);
