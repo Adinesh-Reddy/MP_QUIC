@@ -9,8 +9,8 @@
 
 using namespace std;
 
-// The path manager controls the creation of the paths of one connection (paper, Section 3,
-// Path Management). It owns the Path objects and gives them to the Connection.
+// Decides when the paths of one connection are created. It owns the Path objects and
+// registers them with the Connection.
 //
 // Client: the connection starts on the initial path (Path ID 0), from the first local
 // interface. When the server answers and advertises its addresses (ADD_ADDRESS frame), the

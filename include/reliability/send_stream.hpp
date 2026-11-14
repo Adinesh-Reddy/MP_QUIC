@@ -33,6 +33,10 @@ public:
     // Offset of the next byte that will be put in a frame
     uint64_t get_next_offset() const;
 
+    // Bytes written by the application that were not put in a frame yet.
+    // Lets an application write a large file piece by piece instead of all at once.
+    size_t get_unsent_bytes() const;
+
 private:
     uint32_t stream_id;
     deque<uint8_t> buffer;      // bytes written by the application, not sent yet

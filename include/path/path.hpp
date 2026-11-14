@@ -12,8 +12,8 @@
 
 using namespace std;
 
-// One path of the connection. Besides its addresses, every path has its own packet
-// number space, RTT estimation, congestion state and ACK handling (paper, Fig. 1).
+// One path of a connection: a pair of addresses plus everything that must be kept separate
+// per path, namely its own packet numbers, RTT estimate, congestion window and ACK state.
 class Path
 {
 public:
@@ -78,8 +78,8 @@ private:
     UDPSocket *socket = nullptr;
 
     uint64_t next_packet_number = 1;
-    uint64_t last_network_activity_time = 0;
-    bool potentially_failed = false;
+    uint64_t last_heard_us = 0;
+    bool looks_broken = false;
 
     // rtt_stats and congestion must stay declared before sent_packet_handler (it points to them)
     RttStats rtt_stats;

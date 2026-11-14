@@ -84,7 +84,7 @@ void run_scenario(const Scenario &scenario)
         assert(server.add_path(&server_path1));
     }
 
-    // The default scheduler is the lowest-RTT scheduler of the paper
+    // The default scheduler sends on the path with the lowest RTT
     assert(client.get_scheduler()->get_name() == "lowest-rtt");
 
     // Data to transfer
@@ -324,11 +324,11 @@ void run_scenario(const Scenario &scenario)
     FlowController *client_fc = client.get_flow_control_manager()->get_flow_controller(STREAM_ID);
     assert(client_fc->get_bytes_sent() == TOTAL_BYTES);
     assert(client_fc->get_bytes_sent() <= client_fc->get_send_window());
-    if (TOTAL_BYTES > RECEIVE_STREAM_FLOW_CONTROL_WINDOW)
+    if (TOTAL_BYTES > FlowWindows::STREAM_INITIAL)
     {
-        assert(client_fc->get_send_window() > RECEIVE_STREAM_FLOW_CONTROL_WINDOW);
+        assert(client_fc->get_send_window() > FlowWindows::STREAM_INITIAL);
     }
-    std::cout << "[Flow control] stream send window grew from " << RECEIVE_STREAM_FLOW_CONTROL_WINDOW
+    std::cout << "[Flow control] stream send window grew from " << FlowWindows::STREAM_INITIAL
               << " to " << client_fc->get_send_window() << " bytes\n";
 
     if (scenario.loss_rate > 0)
@@ -397,7 +397,7 @@ void run_scenario(const Scenario &scenario)
                 if (sent_packets[i] > 0)
                 {
                     assert(client_paths[i]->get_congestion()->get_slow_start_threshold_packets() <
-                           DEFAULT_MAX_CONGESTION_WINDOW);
+                           CongestionDefaults::MAX_WINDOW_PACKETS);
                 }
             }
             assert(total_losses > 0);

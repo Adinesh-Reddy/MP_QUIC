@@ -3,39 +3,64 @@
 #include "congestion_control/olia_sender.hpp"
 
 using namespace std;
+using namespace CongestionDefaults;
+using namespace OliaTuning;
 
-// The products of windows, RTTs and byte counts used by OLIA do not always fit in 64 bits
-// (they overflow when the RTTs of the paths are very different), so they are computed
-// with 128-bit integers.
+// The products of windows, squared RTTs and byte counts below can exceed 64 bits (they do
+// when the paths have very different RTTs), so they are computed with 128-bit integers.
 typedef unsigned __int128 uint128;
+
+// How good a path is for OLIA: bytes delivered between losses per squared RTT. It is kept as
+// a fraction so that two paths can be compared without dividing.
+struct PathQuality
+{
+    uint128 bytes = 0;
+    uint128 rtt_squared = 0;
+
+    // this >= other, i.e. bytes / rtt_squared >= other.bytes / other.rtt_squared
+    bool at_least(const PathQuality &other) const
+    {
+        return bytes * other.rtt_squared >= other.bytes * rtt_squared;
+    }
+};
+
+static PathQuality quality_of(OliaSender *sender, const RttStats *rtt)
+{
+    PathQuality quality;
+    uint128 srtt = rtt->get_smoothed_rtt();
+    quality.rtt_squared = srtt * srtt;
+    quality.bytes = sender->get_smoothed_bytes_between_losses();
+    return quality;
+}
 
 OliaSender::OliaSender(RttStats *rtt_stats, uint64_t initial_congestion_window, uint64_t max_congestion_window)
 {
     this->rtt_stats = rtt_stats;
-    this->congestion_window = initial_congestion_window;
-    this->min_congestion_window = DEFAULT_MINIMUM_CONGESTION_WINDOW;
-    this->max_congestion_window = max_congestion_window;
+    this->window = initial_congestion_window;
+    this->min_window = MIN_WINDOW_PACKETS;
+    // A cap below the floor would make the floor win anyway; storing it that way keeps clamp() valid
+    this->max_window = max(max_congestion_window, MIN_WINDOW_PACKETS);
 
-    // No threshold at the beginning: slow start goes on until something stops it
-    this->slowstart_threshold = max_congestion_window;
+    // No threshold yet: slow start runs until a loss or a rising RTT ends it
+    this->ssthresh = max_congestion_window;
 }
 
 void OliaSender::set_olia_senders(map<uint8_t, OliaSender *> *senders)
 {
-    olia_senders = senders;
+    peers = senders;
 }
 
-vector<OliaSender *> OliaSender::all_senders()
+vector<OliaSender *> OliaSender::connection_senders()
 {
-    vector<OliaSender *> senders;
-    if (olia_senders == nullptr || olia_senders->empty())
+    if (peers == nullptr || peers->empty())
     {
-        senders.push_back(this);
-        return senders;
+        return {this};
     }
-    for (auto &entry : *olia_senders)
+
+    vector<OliaSender *> senders;
+    for (const auto &[path_id, sender] : *peers)
     {
-        senders.push_back(entry.second);
+        senders.push_back(sender);
     }
     return senders;
 }
@@ -47,42 +72,42 @@ string OliaSender::get_name() const
 
 uint64_t OliaSender::get_congestion_window() const
 {
-    return congestion_window * DEFAULT_TCP_MSS;
+    return window * MSS_BYTES;
 }
 
 uint64_t OliaSender::get_congestion_window_packets() const
 {
-    return congestion_window;
+    return window;
 }
 
 uint64_t OliaSender::get_slow_start_threshold() const
 {
-    return slowstart_threshold * DEFAULT_TCP_MSS;
+    return ssthresh * MSS_BYTES;
 }
 
 uint64_t OliaSender::get_slow_start_threshold_packets() const
 {
-    return slowstart_threshold;
+    return ssthresh;
 }
 
 bool OliaSender::in_slow_start() const
 {
-    return congestion_window < slowstart_threshold;
+    return window < ssthresh;
 }
 
 bool OliaSender::in_recovery() const
 {
-    return largest_acked_packet_number <= largest_sent_at_last_cutback && largest_acked_packet_number != 0;
+    return newest_acked <= recovery_end && newest_acked != 0;
 }
 
 void OliaSender::exit_slow_start()
 {
-    slowstart_threshold = congestion_window;
+    ssthresh = window;
 }
 
 uint64_t OliaSender::get_smoothed_bytes_between_losses() const
 {
-    return max(loss3 - loss2, loss2 - loss1);
+    return max(acked_total - acked_at_last_loss, acked_at_last_loss - acked_at_older_loss);
 }
 
 int OliaSender::get_epsilon_num() const
@@ -95,65 +120,68 @@ uint32_t OliaSender::get_epsilon_den() const
     return epsilon_den;
 }
 
-void OliaSender::olia_reset()
+void OliaSender::reset_coupling()
 {
-    loss1 = 0;
-    loss2 = 0;
-    loss3 = 0;
+    acked_at_older_loss = 0;
+    acked_at_last_loss = 0;
+    acked_total = 0;
     epsilon_num = 0;
     epsilon_den = 1;
-    snd_cwnd_cnt = 0;
+    window_credit = 0;
 }
 
 void OliaSender::on_packet_sent(uint64_t /*now_us*/, uint64_t /*bytes_in_flight*/, uint64_t packet_number,
                                 uint64_t /*bytes*/, bool is_retransmittable)
 {
-    // Only data packets count (a packet with only an ACK frame is not congestion controlled)
+    // Pure ACK packets are not congestion controlled
     if (!is_retransmittable)
     {
         return;
     }
-    largest_sent_packet_number = packet_number;
+    newest_sent = packet_number;
     hybrid_slow_start.on_packet_sent(packet_number);
 }
 
 void OliaSender::maybe_exit_slow_start()
 {
-    if (in_slow_start() &&
-        hybrid_slow_start.should_exit_slow_start(rtt_stats->get_latest_rtt(), rtt_stats->get_min_rtt(), congestion_window))
+    if (!in_slow_start())
+    {
+        return;
+    }
+    if (hybrid_slow_start.should_exit_slow_start(rtt_stats->get_latest_rtt(), rtt_stats->get_min_rtt(), window))
     {
         exit_slow_start();
     }
 }
 
-// The window only grows when the sender really uses it. If the application has little to
-// send (or another limit holds it back) the window says nothing about what the path can carry.
-bool OliaSender::is_cwnd_limited(uint64_t bytes_in_flight) const
+// The window may only grow while the sender actually fills it. When the application sends
+// little, or something else holds it back, the window tells nothing about the path.
+bool OliaSender::window_is_limiting(uint64_t bytes_in_flight) const
 {
-    uint64_t window = get_congestion_window();
-    if (bytes_in_flight >= window)
+    uint64_t window_bytes = get_congestion_window();
+    if (bytes_in_flight >= window_bytes)
     {
         return true;
     }
-    uint64_t available_bytes = window - bytes_in_flight;
-    bool slow_start_limited = in_slow_start() && bytes_in_flight > window / 2;
-    return slow_start_limited || available_bytes <= MAX_BURST_BYTES;
+    uint64_t room_left = window_bytes - bytes_in_flight;
+    bool slow_start_limited = in_slow_start() && bytes_in_flight > window_bytes / 2;
+    return slow_start_limited || room_left <= MAX_BURST_BYTES;
 }
 
 void OliaSender::on_packet_acked(uint64_t packet_number, uint64_t acked_bytes, uint64_t bytes_in_flight)
 {
-    largest_acked_packet_number = max(packet_number, largest_acked_packet_number);
+    newest_acked = max(packet_number, newest_acked);
 
-    // The window does not grow while we recover from a loss
+    // No growth until the loss that cut the window has been recovered
     if (in_recovery())
     {
         return;
     }
 
-    // OLIA measures the quality of a path with the bytes acknowledged between two losses
-    loss3 += acked_bytes;
+    // OLIA judges a path by the bytes it delivers between two losses
+    acked_total += acked_bytes;
 
-    maybe_increase_cwnd(bytes_in_flight);
+    grow_window(bytes_in_flight);
 
     if (in_slow_start())
     {
@@ -161,116 +189,88 @@ void OliaSender::on_packet_acked(uint64_t packet_number, uint64_t acked_bytes, u
     }
 }
 
-void OliaSender::maybe_increase_cwnd(uint64_t bytes_in_flight)
+void OliaSender::grow_window(uint64_t bytes_in_flight)
 {
-    // Do not increase the congestion window unless the sender is close to using the current window
-    if (!is_cwnd_limited(bytes_in_flight))
-    {
-        return;
-    }
-    if (congestion_window >= max_congestion_window)
+    if (!window_is_limiting(bytes_in_flight) || window >= max_window)
     {
         return;
     }
 
     if (in_slow_start())
     {
-        // Slow start, exponential growth: one more packet for each ACK
-        congestion_window++;
+        // Exponential growth: one packet more per ACK
+        window++;
         return;
     }
 
-    // Congestion avoidance: the coupled increase of OLIA
-    compute_epsilon();
-    uint64_t new_window = congestion_window_after_ack();
-    congestion_window = max(min_congestion_window, min(max_congestion_window, new_window));
+    // Congestion avoidance with OLIA's coupled increase
+    update_epsilons();
+    window = clamp(window_after_coupled_increase(), min_window, max_window);
 }
 
-// Computes epsilon for every path of the connection.
-//   best paths       = the paths with the largest (bytes between losses) / rtt^2
-//   max window paths = the paths with the largest window
-// A best path that does not have the largest window should get more traffic: positive epsilon.
-// The paths with the largest window give some of it away: negative epsilon.
-// If every best path already has the largest window nothing has to move: epsilon = 0.
-void OliaSender::compute_epsilon()
+// Sets epsilon on every path of the connection.
+//   best paths            = those with the highest (bytes between losses) / rtt^2
+//   largest-window paths  = those whose window equals the largest one
+// A best path without the largest window deserves more traffic: positive epsilon.
+// The largest-window paths hand some of theirs over: negative epsilon.
+// When every best path already has the largest window, nothing needs to move: epsilon = 0.
+void OliaSender::update_epsilons()
 {
-    vector<OliaSender *> senders = all_senders();
+    vector<OliaSender *> senders = connection_senders();
 
-    uint64_t max_cwnd = 0;
+    uint64_t largest_window = 0;
     for (OliaSender *sender : senders)
     {
-        max_cwnd = max(max_cwnd, sender->congestion_window);
+        largest_window = max(largest_window, sender->window);
     }
 
-    // Quality of the best path, kept as a fraction best_bytes / best_rtt (rtt squared)
-    uint128 best_rtt = 0;
-    uint128 best_bytes = 0;
+    // Quality of the best path. On a tie the later path is kept (same as ">=" before).
+    PathQuality best;
     for (OliaSender *sender : senders)
     {
-        uint128 rtt = sender->rtt_stats->get_smoothed_rtt();
-        uint128 tmp_rtt = rtt * rtt;
-        uint128 tmp_bytes = sender->get_smoothed_bytes_between_losses();
-
-        // tmp_bytes / tmp_rtt >= best_bytes / best_rtt, written without division
-        if (tmp_bytes * best_rtt >= best_bytes * tmp_rtt)
+        PathQuality quality = quality_of(sender, sender->rtt_stats);
+        if (quality.at_least(best))
         {
-            best_rtt = tmp_rtt;
-            best_bytes = tmp_bytes;
+            best = quality;
         }
     }
 
-    // M = number of paths with the largest window,
-    // b_not_m = number of best paths that do not have the largest window
-    uint32_t m = 0;
-    uint32_t b_not_m = 0;
+    // Count the largest-window paths, and the best paths that are not among them
+    uint32_t largest_count = 0;
+    uint32_t best_but_smaller = 0;
     for (OliaSender *sender : senders)
     {
-        if (sender->congestion_window == max_cwnd)
+        if (sender->window == largest_window)
         {
-            m++;
+            largest_count++;
         }
-        else
+        else if (quality_of(sender, sender->rtt_stats).at_least(best))
         {
-            uint128 rtt = sender->rtt_stats->get_smoothed_rtt();
-            uint128 tmp_rtt = rtt * rtt;
-            uint128 tmp_bytes = sender->get_smoothed_bytes_between_losses();
-            if (tmp_bytes * best_rtt >= best_bytes * tmp_rtt)
-            {
-                b_not_m++;
-            }
+            best_but_smaller++;
         }
     }
 
     uint32_t num_paths = static_cast<uint32_t>(senders.size());
     for (OliaSender *sender : senders)
     {
-        if (b_not_m == 0)
+        sender->epsilon_num = 0;
+        sender->epsilon_den = 1;
+        if (best_but_smaller == 0)
         {
-            sender->epsilon_num = 0;
-            sender->epsilon_den = 1;
             continue;
         }
 
-        uint128 rtt = sender->rtt_stats->get_smoothed_rtt();
-        uint128 tmp_rtt = rtt * rtt;
-        uint128 tmp_bytes = sender->get_smoothed_bytes_between_losses();
-
-        if (sender->congestion_window < max_cwnd && tmp_bytes * best_rtt >= best_bytes * tmp_rtt)
+        if (sender->window < largest_window && quality_of(sender, sender->rtt_stats).at_least(best))
         {
-            // A best path with a small window: epsilon = +1 / (number of paths * b_not_m)
+            // A best path with a smaller window: epsilon = +1 / (paths * best_but_smaller)
             sender->epsilon_num = 1;
-            sender->epsilon_den = num_paths * b_not_m;
+            sender->epsilon_den = num_paths * best_but_smaller;
         }
-        else if (sender->congestion_window == max_cwnd)
+        else if (sender->window == largest_window)
         {
-            // A path with the largest window: epsilon = -1 / (number of paths * m)
+            // A largest-window path: epsilon = -1 / (paths * largest_count)
             sender->epsilon_num = -1;
-            sender->epsilon_den = num_paths * m;
-        }
-        else
-        {
-            sender->epsilon_num = 0;
-            sender->epsilon_den = 1;
+            sender->epsilon_den = num_paths * largest_count;
         }
     }
 }
@@ -278,106 +278,107 @@ void OliaSender::compute_epsilon()
 // The window of this path after one more ACK in congestion avoidance.
 // With S = 2^10 (the scale), W = window * S and
 //   rate = ( SUM_p  window_p * S * rtt_r / rtt_p )^2
-// the increase for one ACK is, in 1/S of a packet:
+// one ACK adds, in units of 1/S packet:
 //   S * ( epsilon_num * rate + epsilon_den * W^2 ) / ( epsilon_den * window * rate )
-// which is the formula of the header:  w_r / rtt_r^2 / (SUM w_p / rtt_p)^2  +  epsilon_r / w_r.
-// The parts are added up in snd_cwnd_cnt; when a whole packet is reached the window moves by one.
-uint64_t OliaSender::congestion_window_after_ack()
+// which is the formula in the header:  w_r / rtt_r^2 / (SUM w_p / rtt_p)^2  +  epsilon_r / w_r.
+// The amounts pile up in window_credit; each time a whole packet is reached the window moves by one.
+uint64_t OliaSender::window_after_coupled_increase()
 {
-    // rate: the windows of all the paths, each one weighted by (our RTT / its RTT).
-    // It starts at 1 because it is used as a divisor.
-    uint128 path_rtt = rtt_stats->get_smoothed_rtt();
+    // rate: the windows of all the paths, each weighted by (our RTT / its RTT).
+    // It starts at 1 because it ends up as a divisor.
+    uint128 own_rtt = rtt_stats->get_smoothed_rtt();
     uint128 rate = 1;
-    for (OliaSender *sender : all_senders())
+    for (OliaSender *sender : connection_senders())
     {
         uint128 sender_rtt = sender->rtt_stats->get_smoothed_rtt();
         if (sender_rtt != 0)
         {
-            uint128 scaled_window = static_cast<uint128>(sender->congestion_window) << OLIA_SCALE;
-            rate += scaled_window * path_rtt / sender_rtt;
+            uint128 scaled_window = static_cast<uint128>(sender->window) << SCALE_SHIFT;
+            rate += scaled_window * own_rtt / sender_rtt;
         }
     }
     rate *= rate;
 
-    uint128 cwnd_scaled = static_cast<uint128>(congestion_window) << OLIA_SCALE;
-    uint128 own_term = static_cast<uint128>(epsilon_den) * cwnd_scaled * cwnd_scaled;
+    uint128 scaled_own_window = static_cast<uint128>(window) << SCALE_SHIFT;
+    uint128 own_term = static_cast<uint128>(epsilon_den) * scaled_own_window * scaled_own_window;
 
-    uint128 inc_den = static_cast<uint128>(epsilon_den) * congestion_window * rate;
-    if (inc_den == 0)
+    uint128 denominator = static_cast<uint128>(epsilon_den) * window * rate;
+    if (denominator == 0)
     {
-        inc_den = 1;
+        denominator = 1;
     }
 
-    // Calculate the increasing term, scaling is used to reduce the rounding effect
+    // The increase, computed on scaled integers so the rounding loses as little as possible.
+    // With a negative epsilon the numerator can change sign, so it is handled apart.
     if (epsilon_num == -1)
     {
         if (own_term < rate)
         {
-            uint128 inc_num = rate - own_term;
-            snd_cwnd_cnt -= static_cast<int64_t>((inc_num << OLIA_SCALE) / inc_den);
+            uint128 numerator = rate - own_term;
+            window_credit -= static_cast<int64_t>((numerator << SCALE_SHIFT) / denominator);
         }
         else
         {
-            uint128 inc_num = own_term - rate;
-            snd_cwnd_cnt += static_cast<int64_t>((inc_num << OLIA_SCALE) / inc_den);
+            uint128 numerator = own_term - rate;
+            window_credit += static_cast<int64_t>((numerator << SCALE_SHIFT) / denominator);
         }
     }
     else
     {
-        uint128 inc_num = static_cast<uint128>(epsilon_num) * rate + own_term;
-        snd_cwnd_cnt += static_cast<int64_t>((inc_num << OLIA_SCALE) / inc_den);
+        uint128 numerator = static_cast<uint128>(epsilon_num) * rate + own_term;
+        window_credit += static_cast<int64_t>((numerator << SCALE_SHIFT) / denominator);
     }
 
-    uint64_t new_window = congestion_window;
-    const int64_t one_packet = (static_cast<int64_t>(1) << OLIA_SCALE) - 1;
+    uint64_t new_window = window;
+    const int64_t one_packet = (static_cast<int64_t>(1) << SCALE_SHIFT) - 1;
 
-    if (snd_cwnd_cnt >= one_packet)
+    if (window_credit >= one_packet)
     {
         new_window++;
-        snd_cwnd_cnt = 0;
+        window_credit = 0;
     }
-    else if (snd_cwnd_cnt <= -one_packet)
+    else if (window_credit <= -one_packet)
     {
-        new_window = max<uint64_t>(1, congestion_window - 1);
-        snd_cwnd_cnt = 0;
+        new_window = max<uint64_t>(1, window - 1);
+        window_credit = 0;
     }
     return new_window;
 }
 
 void OliaSender::on_packet_lost(uint64_t packet_number, uint64_t /*lost_bytes*/, uint64_t /*bytes_in_flight*/)
 {
-    // Once a loss occurs, any losses in packets already sent are treated as a single
-    // loss event, since they are expected: the window is cut only once
-    if (packet_number <= largest_sent_at_last_cutback)
+    // After a cut, more losses among the packets already in flight are expected:
+    // they are the same congestion event, so the window is only cut once
+    if (packet_number <= recovery_end)
     {
         return;
     }
 
-    // A new interval between two losses begins
-    loss1 = loss2;
-    loss2 = loss3;
+    // A new interval between two losses starts
+    acked_at_older_loss = acked_at_last_loss;
+    acked_at_last_loss = acked_total;
 
-    // Only the window of the path that lost the packet is reduced
-    congestion_window = congestion_window / OLIA_LOSS_WINDOW_DIVISOR;
-    if (congestion_window < min_congestion_window)
+    // Only the path that lost the packet reduces its window
+    window = window / LOSS_DIVISOR;
+    if (window < min_window)
     {
-        congestion_window = min_congestion_window;
+        window = min_window;
     }
-    slowstart_threshold = congestion_window;
-    largest_sent_at_last_cutback = largest_sent_packet_number;
+    ssthresh = window;
+    recovery_end = newest_sent;
 }
 
 void OliaSender::on_retransmission_timeout(bool packets_retransmitted)
 {
-    largest_sent_at_last_cutback = 0;
+    recovery_end = 0;
     if (!packets_retransmitted)
     {
         return;
     }
 
-    // Nothing is known about the path anymore: start again from the smallest window
+    // Everything learned about the path is stale: start again from the smallest window
     hybrid_slow_start.restart();
-    olia_reset();
-    slowstart_threshold = congestion_window / 2;
-    congestion_window = min_congestion_window;
+    reset_coupling();
+    ssthresh = window / 2;
+    window = min_window;
 }

@@ -4,19 +4,15 @@
 
 using namespace std;
 
-uint64_t LowestRttScheduler::get_quota(uint8_t path_id) const
+uint64_t LowestRttScheduler::packets_placed_on(uint8_t path_id) const
 {
-    auto it = quotas.find(path_id);
-    if (it == quotas.end())
-    {
-        return 0;
-    }
-    return it->second;
+    auto it = packets_placed.find(path_id);
+    return (it == packets_placed.end()) ? 0 : it->second;
 }
 
 void LowestRttScheduler::on_packet_sent(Path *path)
 {
-    quotas[path->get_id()]++;
+    packets_placed[path->get_id()]++;
 }
 
 string LowestRttScheduler::get_name() const
@@ -31,101 +27,90 @@ Path *LowestRttScheduler::select_path(const map<uint8_t, Path *> &paths, bool ha
         return nullptr;
     }
 
-    // With a single path there is no choice, it is used even if it looks broken
+    // A single path is the only choice: it is used even if it looks broken
     if (paths.size() == 1)
     {
-        Path *path = paths.begin()->second;
-        if (!has_retransmission && !path->sending_allowed())
+        Path *only = paths.begin()->second;
+        if (!has_retransmission && !only->sending_allowed())
         {
             return nullptr;
         }
-        return path;
+        return only;
     }
 
-    // Not in the reference implementation: when every path looks broken we must keep
-    // trying on them, otherwise the connection could never recover
-    bool all_paths_failed = true;
-    for (const auto &entry : paths)
+    // If every path looks broken, keep trying them all: skipping them would leave the
+    // connection with no way to find out that one of them works again
+    bool every_path_failed = all_of(paths.begin(), paths.end(), [](const auto &entry) {
+        return entry.second->is_potentially_failed();
+    });
+
+    Path *chosen = nullptr;
+    uint64_t chosen_rtt = 0; // smoothed RTT of the chosen path, 0 = unknown
+
+    // Paths are visited in Path ID order, so on a tie the lower ID is kept
+    for (const auto &[key, path] : paths)
     {
-        if (!entry.second->is_potentially_failed())
-            all_paths_failed = false;
-    }
-
-    Path *selected_path = nullptr;
-    uint64_t lower_rtt = 0; // smoothed RTT of selected_path, 0 = not known yet
-
-    // The paths are visited in Path ID order, so when two paths are equal the lower ID wins
-    for (const auto &entry : paths)
-    {
-        Path *path = entry.second;
-
-        // Don't block path usage if we retransmit, even on another path
+        // A full window blocks new data, but never retransmissions
         if (!has_retransmission && !path->sending_allowed())
         {
             continue;
         }
 
-        // If this path is potentially failed, do not consider it for sending
-        if (path->is_potentially_failed() && !all_paths_failed)
+        if (path->is_potentially_failed() && !every_path_failed)
         {
             continue;
         }
 
-        uint64_t current_rtt = path->get_rtt_stats()->get_smoothed_rtt();
+        uint64_t rtt = path->get_rtt_stats()->get_smoothed_rtt();
 
-        if (selected_path != nullptr)
+        if (chosen != nullptr)
         {
-            // A path with a known RTT is preferred to a path we know nothing about
-            if (lower_rtt != 0 && current_rtt == 0)
+            // A measured path beats one we know nothing about
+            if (chosen_rtt != 0 && rtt == 0)
             {
                 continue;
             }
 
-            // Several paths without RTT: take the one that sent the fewest packets
-            if (lower_rtt == 0 && current_rtt == 0 &&
-                get_quota(path->get_id()) >= get_quota(selected_path->get_id()))
+            // Neither is measured: prefer the one that has carried fewer packets
+            if (chosen_rtt == 0 && rtt == 0 && packets_placed_on(path->get_id()) >= packets_placed_on(chosen->get_id()))
             {
                 continue;
             }
 
-            // Both RTTs are known: keep the lowest one
-            if (lower_rtt != 0 && current_rtt != 0 && current_rtt >= lower_rtt)
+            // Both measured: the smaller RTT wins
+            if (chosen_rtt != 0 && rtt != 0 && rtt >= chosen_rtt)
             {
                 continue;
             }
         }
 
-        lower_rtt = current_rtt;
-        selected_path = path;
+        chosen_rtt = rtt;
+        chosen = path;
     }
 
-    return selected_path;
+    return chosen;
 }
 
 Path *LowestRttScheduler::select_duplicate_path(const map<uint8_t, Path *> &paths, Path *sent_on)
 {
-    // Duplicate traffic only when it was sent on a path whose performance is unknown
+    // Copies are only made for data sent on a path whose RTT is still unknown
     if (sent_on == nullptr || sent_on->get_rtt_stats()->get_smoothed_rtt() != 0)
     {
         return nullptr;
     }
 
-    uint64_t current_quota = get_quota(sent_on->get_id());
+    uint64_t placed_on_original = packets_placed_on(sent_on->get_id());
 
-    for (const auto &entry : paths)
-    {
+    auto candidate = find_if(paths.begin(), paths.end(), [&](const auto &entry) {
         Path *path = entry.second;
         if (path == sent_on || path->is_potentially_failed())
         {
-            continue;
+            return false;
         }
+        // A path that has carried fewer packets has not received this data yet. For that
+        // path the copy is ordinary traffic, so its congestion window must have room.
+        return packets_placed_on(path->get_id()) < placed_on_original && path->sending_allowed();
+    });
 
-        // A path that sent fewer packets did not carry this packet yet. The duplicate is
-        // ordinary traffic for that path, so its congestion window must have room.
-        if (get_quota(path->get_id()) < current_quota && path->sending_allowed())
-        {
-            return path;
-        }
-    }
-    return nullptr;
+    return (candidate == paths.end()) ? nullptr : candidate->second;
 }

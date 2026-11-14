@@ -11,18 +11,18 @@ FlowController::FlowController(uint32_t stream_id, bool contributes_to_connectio
 
     if (stream_id == 0)
     {
-        receive_window = RECEIVE_CONNECTION_FLOW_CONTROL_WINDOW;
-        max_receive_window_increment = MAX_RECEIVE_CONNECTION_FLOW_CONTROL_WINDOW;
+        advertised_limit = FlowWindows::CONNECTION_INITIAL;
+        max_window_step = FlowWindows::CONNECTION_MAX;
     }
     else
     {
-        receive_window = RECEIVE_STREAM_FLOW_CONTROL_WINDOW;
-        max_receive_window_increment = MAX_RECEIVE_STREAM_FLOW_CONTROL_WINDOW;
+        advertised_limit = FlowWindows::STREAM_INITIAL;
+        max_window_step = FlowWindows::STREAM_MAX;
     }
-    receive_window_increment = receive_window;
+    window_step = advertised_limit;
 
-    // The peer starts with the same receive window, so this is what we may send at first
-    send_window = receive_window;
+    // Both hosts start from the same windows, so our first send limit equals our own receive window
+    send_limit = advertised_limit;
 }
 
 bool FlowController::get_contributes_to_connection() const
@@ -32,20 +32,20 @@ bool FlowController::get_contributes_to_connection() const
 
 void FlowController::add_bytes_sent(uint64_t n)
 {
-    bytes_sent += n;
+    sent_bytes += n;
 }
 
 uint64_t FlowController::get_bytes_sent() const
 {
-    return bytes_sent;
+    return sent_bytes;
 }
 
 bool FlowController::update_send_window(uint64_t new_offset)
 {
-    // A window never moves backwards (an old WINDOW_UPDATE can arrive late)
-    if (new_offset > send_window)
+    // Limits only move forward: a delayed, older WINDOW_UPDATE must not shrink them
+    if (new_offset > send_limit)
     {
-        send_window = new_offset;
+        send_limit = new_offset;
         return true;
     }
     return false;
@@ -53,135 +53,130 @@ bool FlowController::update_send_window(uint64_t new_offset)
 
 uint64_t FlowController::send_window_size() const
 {
-    if (bytes_sent > send_window)
+    if (sent_bytes > send_limit)
     {
         return 0;
     }
-    return send_window - bytes_sent;
+    return send_limit - sent_bytes;
 }
 
 uint64_t FlowController::get_send_window() const
 {
-    return send_window;
+    return send_limit;
 }
 
 uint64_t FlowController::update_highest_received(uint64_t byte_offset)
 {
-    // A smaller offset is normal when frames are reordered, nothing to do then
-    if (byte_offset <= highest_received)
+    // Reordered frames often end below what we have already seen: nothing changes then
+    if (byte_offset <= highest_offset)
     {
         return 0;
     }
-    uint64_t increment = byte_offset - highest_received;
-    highest_received = byte_offset;
+    uint64_t increment = byte_offset - highest_offset;
+    highest_offset = byte_offset;
     return increment;
 }
 
 void FlowController::increment_highest_received(uint64_t increment)
 {
-    highest_received += increment;
+    highest_offset += increment;
 }
 
 void FlowController::add_bytes_read(uint64_t n, uint64_t now_us)
 {
-    // Pretend we sent a WINDOW_UPDATE when the first byte is read,
-    // this way the auto-tuning already works for the first real WINDOW_UPDATE
-    if (bytes_read == 0)
+    // The first byte read counts as a window update, so the auto-tuning has a starting
+    // time and can already act on the first real WINDOW_UPDATE
+    if (read_bytes == 0)
     {
-        last_window_update_time = now_us;
+        last_update_us = now_us;
     }
-    bytes_read += n;
+    read_bytes += n;
 }
 
 bool FlowController::maybe_update_window(uint64_t now_us, uint64_t rtt_us, uint64_t &new_increment, uint64_t &new_offset)
 {
-    // (bytes_read can never pass receive_window: data beyond the window is refused before it is read)
-    uint64_t diff = (receive_window > bytes_read) ? (receive_window - bytes_read) : 0;
+    // read_bytes never passes advertised_limit: data beyond the limit is refused before it can be read
+    uint64_t room_left = (advertised_limit > read_bytes) ? (advertised_limit - read_bytes) : 0;
 
-    // Less than half of the increment is left for the peer: move the window forward
-    if (diff < receive_window_increment / 2)
+    // Under half a step of room left for the peer: advertise a new limit
+    if (room_left < window_step / 2)
     {
-        uint64_t old_window_increment = receive_window_increment;
+        uint64_t previous_step = window_step;
 
-        maybe_adjust_window_increment(now_us, rtt_us);
+        autotune_step(now_us, rtt_us);
 
         new_increment = 0;
-        if (receive_window_increment != old_window_increment)
+        if (window_step != previous_step)
         {
-            new_increment = receive_window_increment;
+            new_increment = window_step;
         }
 
-        last_window_update_time = now_us;
-        receive_window = bytes_read + receive_window_increment;
-        new_offset = receive_window;
+        last_update_us = now_us;
+        advertised_limit = read_bytes + window_step;
+        new_offset = advertised_limit;
         return true;
     }
 
-    new_increment = receive_window_increment;
-    new_offset = receive_window;
+    new_increment = window_step;
+    new_offset = advertised_limit;
     return false;
 }
 
-// Doubles the increment if we have to send WINDOW_UPDATEs too often
-void FlowController::maybe_adjust_window_increment(uint64_t now_us, uint64_t rtt_us)
+// Doubles the step when updates come too close together: two updates within two RTTs mean
+// the window, not the application, is what limits the sender
+void FlowController::autotune_step(uint64_t now_us, uint64_t rtt_us)
 {
-    if (last_window_update_time == 0)
+    // No reference time or no RTT yet: nothing to compare with
+    if (last_update_us == 0 || rtt_us == 0)
     {
         return;
     }
 
-    if (rtt_us == 0)
+    // Updates are already far enough apart
+    if (now_us - last_update_us >= 2 * rtt_us)
     {
         return;
     }
 
-    uint64_t time_since_last_window_update = now_us - last_window_update_time;
-
-    // The interval between the window updates is large enough, no need to increase the increment
-    if (time_since_last_window_update >= 2 * rtt_us)
-    {
-        return;
-    }
-
-    receive_window_increment = min(2 * receive_window_increment, max_receive_window_increment);
+    window_step = min(2 * window_step, max_window_step);
 }
 
 void FlowController::ensure_minimum_window_increment(uint64_t inc)
 {
-    if (inc > receive_window_increment)
+    if (inc > window_step)
     {
-        receive_window_increment = min(inc, max_receive_window_increment);
-        last_window_update_time = 0; // disables the auto-tuning for the next window update
+        window_step = min(inc, max_window_step);
+        last_update_us = 0; // the next update skips auto-tuning, the step was just raised
     }
 }
 
 bool FlowController::check_flow_control_violation() const
 {
-    return highest_received > receive_window;
+    return highest_offset > advertised_limit;
 }
 
 uint64_t FlowController::get_receive_window() const
 {
-    return receive_window;
+    return advertised_limit;
 }
 
 uint64_t FlowController::get_receive_window_increment() const
 {
-    return receive_window_increment;
+    return window_step;
 }
 
 uint64_t FlowController::get_highest_received() const
 {
-    return highest_received;
+    return highest_offset;
 }
 
 uint64_t FlowController::get_bytes_read() const
 {
-    return bytes_read;
+    return read_bytes;
 }
 
 FlowControlManager::FlowControlManager()
-    : connection_flow_controller(0, false)
+    : connection_level(0, false)
 {
 }
 
@@ -189,38 +184,38 @@ FlowController *FlowControlManager::get_flow_controller(uint32_t stream_id)
 {
     if (stream_id == 0)
     {
-        return &connection_flow_controller;
+        return &connection_level;
     }
 
-    // The flow controller of a stream is created the first time the stream is used
-    auto it = stream_flow_controllers.find(stream_id);
-    if (it == stream_flow_controllers.end())
+    // Stream controllers are created on first use
+    auto it = per_stream.find(stream_id);
+    if (it == per_stream.end())
     {
-        it = stream_flow_controllers.emplace(stream_id, FlowController(stream_id, true)).first;
+        it = per_stream.emplace(stream_id, FlowController(stream_id, true)).first;
     }
     return &it->second;
 }
 
 uint64_t FlowControlManager::send_window_size(uint32_t stream_id)
 {
-    FlowController *fc = get_flow_controller(stream_id);
-    uint64_t res = fc->send_window_size();
+    FlowController *flow = get_flow_controller(stream_id);
+    uint64_t result = flow->send_window_size();
 
-    if (fc->get_contributes_to_connection())
+    if (flow->get_contributes_to_connection())
     {
-        res = min(res, connection_flow_controller.send_window_size());
+        result = min(result, connection_level.send_window_size());
     }
-    return res;
+    return result;
 }
 
 void FlowControlManager::add_bytes_sent(uint32_t stream_id, uint64_t n)
 {
-    FlowController *fc = get_flow_controller(stream_id);
-    fc->add_bytes_sent(n);
+    FlowController *flow = get_flow_controller(stream_id);
+    flow->add_bytes_sent(n);
 
-    if (fc->get_contributes_to_connection())
+    if (flow->get_contributes_to_connection())
     {
-        connection_flow_controller.add_bytes_sent(n);
+        connection_level.add_bytes_sent(n);
     }
 }
 
@@ -231,18 +226,18 @@ bool FlowControlManager::update_window(uint32_t stream_id, uint64_t byte_offset)
 
 bool FlowControlManager::update_highest_received(uint32_t stream_id, uint64_t byte_offset)
 {
-    FlowController *fc = get_flow_controller(stream_id);
-    uint64_t increment = fc->update_highest_received(byte_offset);
+    FlowController *flow = get_flow_controller(stream_id);
+    uint64_t increment = flow->update_highest_received(byte_offset);
 
-    if (fc->check_flow_control_violation())
+    if (flow->check_flow_control_violation())
     {
         return false;
     }
 
-    if (fc->get_contributes_to_connection())
+    if (flow->get_contributes_to_connection())
     {
-        connection_flow_controller.increment_highest_received(increment);
-        if (connection_flow_controller.check_flow_control_violation())
+        connection_level.increment_highest_received(increment);
+        if (connection_level.check_flow_control_violation())
         {
             return false;
         }
@@ -252,51 +247,50 @@ bool FlowControlManager::update_highest_received(uint32_t stream_id, uint64_t by
 
 void FlowControlManager::add_bytes_read(uint32_t stream_id, uint64_t n, uint64_t now_us)
 {
-    FlowController *fc = get_flow_controller(stream_id);
-    fc->add_bytes_read(n, now_us);
+    FlowController *flow = get_flow_controller(stream_id);
+    flow->add_bytes_read(n, now_us);
 
-    if (fc->get_contributes_to_connection())
+    if (flow->get_contributes_to_connection())
     {
-        connection_flow_controller.add_bytes_read(n, now_us);
+        connection_level.add_bytes_read(n, now_us);
     }
 }
 
 vector<WindowUpdateFrame> FlowControlManager::get_window_updates(uint64_t now_us, uint64_t rtt_us)
 {
-    vector<WindowUpdateFrame> res;
+    vector<WindowUpdateFrame> result;
     uint64_t new_increment = 0;
     uint64_t offset = 0;
 
     // WINDOW_UPDATEs of the streams
-    for (auto &entry : stream_flow_controllers)
+    for (auto &[stream_id, flow] : per_stream)
     {
-        FlowController &fc = entry.second;
-        if (fc.maybe_update_window(now_us, rtt_us, new_increment, offset))
+        if (flow.maybe_update_window(now_us, rtt_us, new_increment, offset))
         {
             WindowUpdateFrame frame;
-            frame.stream_id = entry.first;
+            frame.stream_id = stream_id;
             frame.byte_offset = offset;
-            res.push_back(frame);
+            result.push_back(frame);
 
-            // When the window of a stream grows, the connection window must be able to follow
-            if (fc.get_contributes_to_connection() && new_increment != 0)
+            // A stream window that grows pulls the connection window up with it
+            if (flow.get_contributes_to_connection() && new_increment != 0)
             {
-                connection_flow_controller.ensure_minimum_window_increment(
-                    static_cast<uint64_t>(new_increment * CONNECTION_FLOW_CONTROL_MULTIPLIER));
+                connection_level.ensure_minimum_window_increment(
+                    static_cast<uint64_t>(new_increment * FlowWindows::CONNECTION_FACTOR));
             }
         }
     }
 
     // WINDOW_UPDATE of the connection
-    if (connection_flow_controller.maybe_update_window(now_us, rtt_us, new_increment, offset))
+    if (connection_level.maybe_update_window(now_us, rtt_us, new_increment, offset))
     {
         WindowUpdateFrame frame;
         frame.stream_id = 0;
         frame.byte_offset = offset;
-        res.push_back(frame);
+        result.push_back(frame);
     }
 
-    return res;
+    return result;
 }
 
 uint64_t FlowControlManager::get_receive_window(uint32_t stream_id)

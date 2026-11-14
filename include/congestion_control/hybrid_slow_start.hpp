@@ -5,18 +5,12 @@
 
 using namespace std;
 
-// Same values as the reference implementation
-const uint64_t HYBRID_START_LOW_WINDOW = 16;             // never leave slow start below 16 packets
-const uint32_t HYBRID_START_MIN_SAMPLES = 8;             // RTT samples looked at in each round
-const uint32_t HYBRID_START_DELAY_FACTOR_EXP = 3;        // threshold = min RTT / 2^3
-const uint64_t HYBRID_START_DELAY_MIN_THRESHOLD_US = 4000;
-const uint64_t HYBRID_START_DELAY_MAX_THRESHOLD_US = 16000;
-
-// Hybrid slow start: a way to leave slow start BEFORE packets are lost.
-// In slow start the window doubles every round trip. When the path gets full its queue
-// grows and so does the RTT. This class compares the RTT at the beginning of each round
-// (one round = one window of packets) with the lowest RTT ever seen: if it increased
-// clearly, the path is filling up and slow start must stop.
+// Hybrid slow start: ends slow start before the first loss instead of after it.
+// While in slow start the window doubles every round trip, so it soon outgrows the path;
+// from then on the extra packets sit in a queue and the RTT goes up. Once per round
+// (a round = one window of packets) the smallest RTT of the round is compared with the
+// smallest RTT the path has ever shown. A clear rise means the queue is filling up,
+// and slow start stops while there is still no loss.
 class HybridSlowStart
 {
 public:
@@ -38,13 +32,22 @@ public:
     // Restart the slow start phase
     void restart();
 
+    // Never leave slow start while the window is still this small (packets)
+    static constexpr uint64_t MIN_EXIT_WINDOW_PACKETS = 16;
+    // RTT samples taken at the start of each round to find its smallest RTT
+    static constexpr uint32_t SAMPLES_PER_ROUND = 8;
+    // A rise counts when it exceeds min RTT / 2^RISE_SHIFT (1/8), held between these bounds
+    static constexpr uint32_t RISE_SHIFT = 3;
+    static constexpr uint64_t MIN_RISE_US = 4000;
+    static constexpr uint64_t MAX_RISE_US = 16000;
+
 private:
-    uint64_t end_packet_number = 0;
-    uint64_t last_sent_packet_number = 0;
-    bool started = false;
-    uint64_t current_min_rtt = 0;
-    uint32_t rtt_sample_count = 0;
-    bool hystart_found = false;
+    uint64_t round_last_packet = 0;  // the round ends when an ACK goes past this number
+    uint64_t newest_sent = 0;
+    bool round_open = false;
+    uint64_t round_min_rtt = 0;
+    uint32_t round_samples = 0;
+    bool rise_detected = false;
 };
 
 #endif

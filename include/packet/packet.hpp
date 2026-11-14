@@ -12,7 +12,7 @@ using namespace std;
 // inside the packet. The bits are kept free for connection setup in a later phase.
 const uint8_t FLAG_NONE = 0x00;
 
-// Largest UDP payload we send (same value as the reference implementation)
+// Largest UDP payload we send: small enough to pass a 1500-byte MTU with IP/UDP headers and tunnels
 const size_t MAX_PACKET_SIZE = 1350;
 
 // Public header: a few flags, the Connection ID, the Path ID and the Packet Number.

@@ -26,12 +26,12 @@ public:
     uint64_t get_buffered_bytes() const;
 
 private:
-    // Buffered data: start offset -> bytes. The chunks never overlap and
-    // all of them start at or after read_position.
-    map<uint64_t, vector<uint8_t>> chunks;
+    // Data that arrived ahead of the read position: start offset -> bytes.
+    // Pieces never overlap, and all of them start at or after delivered_up_to.
+    map<uint64_t, vector<uint8_t>> waiting;
 
-    uint64_t read_position = 0;
-    uint64_t buffered_bytes = 0;
+    uint64_t delivered_up_to = 0;
+    uint64_t waiting_bytes = 0;
 };
 
 #endif

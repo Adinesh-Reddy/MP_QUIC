@@ -61,16 +61,13 @@ Path *PathManager::open_initial_path(const string &remote_ip, uint16_t remote_po
 
 size_t PathManager::on_add_address(const vector<NetworkAddress> &addresses)
 {
-    // Addresses of the server that no path of ours goes to yet
+    // Server addresses that none of our paths uses yet
     vector<NetworkAddress> candidates;
     for (const auto &address : addresses)
     {
-        bool in_use = false;
-        for (const auto &path : paths)
-        {
-            if (path->get_remote_ip() == address.ip && path->get_remote_port() == address.port)
-                in_use = true;
-        }
+        bool in_use = any_of(paths.begin(), paths.end(), [&](const unique_ptr<Path> &path) {
+            return path->get_remote_ip() == address.ip && path->get_remote_port() == address.port;
+        });
         if (!in_use)
         {
             candidates.push_back(address);
@@ -91,9 +88,9 @@ size_t PathManager::on_add_address(const vector<NetworkAddress> &addresses)
             break; // the Path ID is one byte
         }
 
-        // The i-th free interface goes to the i-th free address of the server. (The reference
-        // implementation opens a path for every pair of addresses; with two disjoint networks
-        // only the matching pairs can work, so we open those.)
+        // Free interfaces and free server addresses are paired in order (first with first, ...).
+        // Pairing every interface with every address would also be possible, but on two
+        // separate networks only the matching pairs can reach each other.
         NetworkAddress remote = initial_remote;
         if (next_candidate < candidates.size())
         {
@@ -110,8 +107,7 @@ size_t PathManager::on_add_address(const vector<NetworkAddress> &addresses)
         next_path_id += 2;
         opened++;
 
-        // Send a PING to inform the peer of the existence of the path
-        // and to get its first RTT measurement
+        // A PING announces the path to the server and brings back its first RTT sample
         connection->send_ping(path->get_id());
     }
 
@@ -121,25 +117,24 @@ size_t PathManager::on_add_address(const vector<NetworkAddress> &addresses)
 Path *PathManager::on_packet_received(uint8_t path_id, UDPSocket *socket, const string &local_ip,
                                       const string &remote_ip, uint16_t remote_port)
 {
-    for (auto &path : paths)
+    auto known = find_if(paths.begin(), paths.end(),
+                         [&](const unique_ptr<Path> &path) { return path->get_id() == path_id; });
+    if (known != paths.end())
     {
-        if (path->get_id() != path_id)
-        {
-            continue;
-        }
+        Path *path = known->get();
 
-        // The peer now sends from another address on this path (NAT rebinding):
-        // answer there, the state of the path is kept
+        // Same path, new source address (e.g. a NAT gave the client another port):
+        // reply to the new address and keep all the state of the path
         if (path->get_remote_ip() != remote_ip || path->get_remote_port() != remote_port)
         {
             cout << "Path " << (int)path_id << ": the other side now sends from "
                  << remote_ip << ":" << remote_port << ", so our packets now go there\n";
             path->set_remote_address(remote_ip, remote_port);
         }
-        return path.get();
+        return path;
     }
 
-    // A new path. Paths are created by the client: the initial one (0) and odd IDs.
+    // An unknown path. Only the client opens paths: the initial one (0) and odd IDs after it.
     if (path_id != 0 && path_id % 2 == 0)
     {
         return nullptr;

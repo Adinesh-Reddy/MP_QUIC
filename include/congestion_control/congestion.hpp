@@ -5,12 +5,18 @@
 
 using namespace std;
 
-// Same values as the reference implementation
-const uint64_t DEFAULT_TCP_MSS = 1460;
-const uint64_t INITIAL_CONGESTION_WINDOW = 32; // in packets
+// Window sizes shared by every congestion controller. Windows are counted in packets of
+// MSS_BYTES, the usual TCP segment size, so a window converts to bytes as packets * MSS_BYTES.
+namespace CongestionDefaults
+{
+    constexpr uint64_t MSS_BYTES = 1460;
+    constexpr uint64_t INITIAL_WINDOW_PACKETS = 32; // large enough to fill a short path in one RTT
+    constexpr uint64_t MIN_WINDOW_PACKETS = 2;      // a loss never shrinks the window below this
+    constexpr uint64_t MAX_WINDOW_PACKETS = 2500;   // about 3.6 MB in flight per path
+}
 
-// What the reliability code tells the congestion control of a path.
-// OliaSender (olia_sender.hpp) implements it with OLIA, the scheme used in the paper.
+// The events that the reliability layer reports to the congestion control of one path.
+// OliaSender (olia_sender.hpp) implements it with OLIA, a coupled multipath scheme.
 class CongestionController
 {
 public:
@@ -37,7 +43,7 @@ public:
 class FixedWindowCongestion : public CongestionController
 {
 public:
-    FixedWindowCongestion(uint64_t window_packets = INITIAL_CONGESTION_WINDOW);
+    FixedWindowCongestion(uint64_t window_packets = CongestionDefaults::INITIAL_WINDOW_PACKETS);
 
     void on_packet_sent(uint64_t now_us, uint64_t bytes_in_flight, uint64_t packet_number,
                         uint64_t bytes, bool is_retransmittable) override;

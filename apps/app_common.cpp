@@ -99,20 +99,26 @@ bool parse_address(const string &text, NetworkAddress &out)
 
 bool read_file(const string &path, vector<uint8_t> &out)
 {
-    ifstream file(path, ios::binary);
+    ifstream file(path, ios::binary | ios::ate); // opened at the end, so tellg() is the size
     if (!file)
     {
         return false;
     }
-    out.assign(istreambuf_iterator<char>(file), istreambuf_iterator<char>());
-    return true;
+    streamoff size = file.tellg();
+    if (size < 0)
+    {
+        return false;
+    }
+    // One read of the whole size (reading character by character is about 10 times slower)
+    out.resize(static_cast<size_t>(size));
+    file.seekg(0);
+    return size == 0 || file.read(reinterpret_cast<char *>(out.data()), size).good();
 }
 
 void print_path_statistics(Connection &connection)
 {
-    for (const auto &entry : connection.get_paths())
+    for (const auto &[path_id, path] : connection.get_paths())
     {
-        Path *path = entry.second;
         SentPacketHandler *sent = path->get_sent_packet_handler();
         ReceivedPacketHandler *received = path->get_received_packet_handler();
         OliaSender *olia = path->get_congestion();
@@ -175,9 +181,8 @@ void StatsWriter::sample(Connection &connection, uint64_t bytes_transferred)
         start_us = Packet::current_time_us();
     }
     uint64_t time_ms = (Packet::current_time_us() - start_us) / 1000;
-    for (const auto &entry : connection.get_paths())
+    for (const auto &[path_id, path] : connection.get_paths())
     {
-        Path *path = entry.second;
         SentPacketHandler *sent = path->get_sent_packet_handler();
         OliaSender *olia = path->get_congestion();
 

@@ -3,6 +3,7 @@
 #include "reliability/sent_packet_handler.hpp"
 
 using namespace std;
+using namespace LossRecovery;
 
 SentPacketHandler::SentPacketHandler(RttStats *rtt_stats, CongestionController *congestion)
 {
@@ -12,26 +13,26 @@ SentPacketHandler::SentPacketHandler(RttStats *rtt_stats, CongestionController *
 
 void SentPacketHandler::set_rto_callback(RtoCallback cb)
 {
-    on_rto_callback = cb;
+    rto_handler = cb;
 }
 
 bool SentPacketHandler::sent_packet(uint64_t packet_number, const vector<Frame> &frames, uint64_t length, uint64_t now_us)
 {
-    // Packet numbers only increase on a path, also for retransmissions
-    if (packet_number <= last_sent_packet_number)
+    // Numbers on a path only go up, resent data included
+    if (packet_number <= highest_sent)
     {
         return false;
     }
 
-    last_sent_packet_number = packet_number;
-    packets++;
+    highest_sent = packet_number;
+    total_sent++;
 
     SentPacket packet;
     packet.packet_number = packet_number;
     packet.length = length;
     packet.send_time_us = now_us;
 
-    // ACK frames are never retransmitted, so we do not keep them
+    // ACK frames are rebuilt fresh every time, so there is no point in keeping them
     for (const auto &frame : frames)
     {
         if (frame.is_retransmittable())
@@ -40,343 +41,331 @@ bool SentPacketHandler::sent_packet(uint64_t packet_number, const vector<Frame> 
         }
     }
 
-    // A packet with only an ACK frame is not tracked: the peer does not acknowledge it
-    bool is_retransmittable = !packet.frames.empty();
-    if (is_retransmittable)
+    // A packet holding only an ACK is never acknowledged by the peer, so it is not tracked
+    bool carries_data = !packet.frames.empty();
+    if (carries_data)
     {
-        // Only these packets restart the timers. (The reference implementation also counts
-        // ACK-only packets here, which can delay a retransmission while we keep sending ACKs.)
-        last_sent_time = now_us;
+        // Only data packets restart the timers. Counting pure ACKs as well would let a host
+        // that keeps acknowledging push its own retransmissions further and further away.
+        last_data_sent_us = now_us;
         bytes_in_flight += length;
-        packet_history[packet_number] = packet;
+        in_flight[packet_number] = packet;
     }
 
-    congestion->on_packet_sent(now_us, bytes_in_flight, packet_number, length, is_retransmittable);
+    congestion->on_packet_sent(now_us, bytes_in_flight, packet_number, length, carries_data);
 
-    update_loss_detection_alarm();
+    rearm_timer();
     return true;
 }
 
 bool SentPacketHandler::received_ack(const AckFrame &ack, uint64_t with_packet_number, uint64_t rcv_time_us)
 {
-    if (ack.ranges.empty() || ack.largest_acked > last_sent_packet_number)
+    if (ack.ranges.empty() || ack.largest_acked > highest_sent)
     {
-        return false; // ACK for a packet that was never sent
+        return false; // it covers a number we never used
     }
 
-    // Duplicate or out-of-order ACK: a newer ACK was already processed
+    // An ACK carried by an older packet than one already processed tells nothing new
     if (with_packet_number != 0)
     {
-        if (with_packet_number <= largest_received_packet_with_ack)
+        if (with_packet_number <= newest_ack_carrier)
         {
             return true;
         }
-        largest_received_packet_with_ack = with_packet_number;
+        newest_ack_carrier = with_packet_number;
     }
 
-    // Repeated ACK: it does not acknowledge anything above what we already know
-    if (ack.largest_acked <= largest_in_order_acked())
+    // Nothing above the contiguous acknowledged prefix: a plain repeat
+    if (ack.largest_acked <= highest_contiguous_acked())
     {
         return true;
     }
-    largest_acked = max(largest_acked, ack.largest_acked);
+    highest_acked = max(highest_acked, ack.largest_acked);
 
-    // The RTT is measured with the largest acked packet only
-    bool rtt_updated = maybe_update_rtt(ack.largest_acked, ack.ack_delay_us, rcv_time_us);
-    if (rtt_updated)
+    // One RTT sample per ACK, taken from its largest packet number
+    if (sample_rtt(ack.largest_acked, ack.ack_delay_us, rcv_time_us))
     {
-        // A clearly growing RTT means the path is filling up: slow start can stop before a loss
+        // A clearly growing RTT means the queue is building up: slow start may end before any loss
         congestion->maybe_exit_slow_start();
     }
 
-    vector<uint64_t> acked_packets = determine_newly_acked_packets(ack);
-    for (uint64_t packet_number : acked_packets)
+    for (uint64_t packet_number : find_newly_acked(ack))
     {
-        uint64_t length = packet_history[packet_number].length;
-        on_packet_acked(packet_number);
+        uint64_t length = in_flight[packet_number].length;
+        forget_acked(packet_number);
         congestion->on_packet_acked(packet_number, length, bytes_in_flight);
     }
 
-    detect_lost_packets(rcv_time_us);
-    update_loss_detection_alarm();
+    declare_lost_packets(rcv_time_us);
+    rearm_timer();
 
     return true;
 }
 
-uint64_t SentPacketHandler::largest_in_order_acked() const
+uint64_t SentPacketHandler::highest_contiguous_acked() const
 {
-    if (!packet_history.empty())
+    if (in_flight.empty())
     {
-        return packet_history.begin()->first - 1;
+        return highest_acked;
     }
-    return largest_acked;
+    // Everything below the oldest packet still in flight has been acknowledged
+    return in_flight.begin()->first - 1;
 }
 
-bool SentPacketHandler::maybe_update_rtt(uint64_t largest_acked_pn, uint64_t ack_delay_us, uint64_t rcv_time_us)
+bool SentPacketHandler::sample_rtt(uint64_t acked_number, uint64_t ack_delay_us, uint64_t rcv_time_us)
 {
-    // If the packet is not in the history anymore it was already acked, no new sample
-    auto it = packet_history.find(largest_acked_pn);
-    if (it == packet_history.end())
+    // Already removed means an earlier ACK covered it: no fresh sample
+    auto it = in_flight.find(acked_number);
+    if (it == in_flight.end())
     {
         return false;
     }
 
-    if (rcv_time_us <= it->second.send_time_us)
+    uint64_t sent_at = it->second.send_time_us;
+    if (rcv_time_us <= sent_at)
     {
         return false;
     }
 
-    rtt_stats->update_rtt(rcv_time_us - it->second.send_time_us, ack_delay_us);
+    rtt_stats->update_rtt(rcv_time_us - sent_at, ack_delay_us);
     return true;
 }
 
-vector<uint64_t> SentPacketHandler::determine_newly_acked_packets(const AckFrame &ack) const
+vector<uint64_t> SentPacketHandler::find_newly_acked(const AckFrame &ack) const
 {
-    vector<uint64_t> acked_packets;
+    vector<uint64_t> acked;
 
-    // The history is walked upwards, so the ACK ranges are walked from the
-    // lowest one (the last in the frame) to the highest one
-    size_t range_index = ack.ranges.size() - 1;
+    // We walk the packets in flight from low to high numbers, so the ACK ranges are walked
+    // in the same direction: from the last range in the frame (lowest) to the first (highest)
+    size_t range = ack.ranges.size() - 1;
 
-    for (auto it = packet_history.lower_bound(ack.lowest_acked()); it != packet_history.end(); ++it)
+    for (auto it = in_flight.lower_bound(ack.lowest_acked()); it != in_flight.end(); ++it)
     {
-        uint64_t packet_number = it->first;
-        if (packet_number > ack.largest_acked)
+        uint64_t number = it->first;
+        if (number > ack.largest_acked)
         {
             break;
         }
 
-        while (packet_number > ack.ranges[range_index].last && range_index > 0)
+        while (number > ack.ranges[range].last && range > 0)
         {
-            range_index--;
+            range--;
         }
 
-        if (packet_number >= ack.ranges[range_index].first && packet_number <= ack.ranges[range_index].last)
+        if (number >= ack.ranges[range].first && number <= ack.ranges[range].last)
         {
-            acked_packets.push_back(packet_number);
+            acked.push_back(number);
         }
     }
 
-    return acked_packets;
+    return acked;
 }
 
-void SentPacketHandler::on_packet_acked(uint64_t packet_number)
+void SentPacketHandler::forget_acked(uint64_t packet_number)
 {
-    auto it = packet_history.find(packet_number);
-    if (it == packet_history.end())
+    auto it = in_flight.find(packet_number);
+    if (it == in_flight.end())
     {
         return;
     }
     bytes_in_flight -= it->second.length;
-    rto_count = 0;
-    tlp_count = 0;
-    packet_history.erase(it);
+
+    // The path answered, so the backoff of both timers starts again from zero
+    rtos_in_a_row = 0;
+    probes_in_a_row = 0;
+    in_flight.erase(it);
 }
 
-// Time based loss detection. A packet below the largest acked one is lost when it was
-// sent more than 9/8 of an RTT ago: packets sent after it were acknowledged, and it had
-// enough time to arrive even with some reordering.
-void SentPacketHandler::detect_lost_packets(uint64_t now_us)
+// Time-based loss detection. A packet numbered below the highest acknowledged one is called
+// lost once it has been in flight for more than 9/8 of an RTT: later packets already got
+// through, and the extra eighth leaves room for some reordering.
+void SentPacketHandler::declare_lost_packets(uint64_t now_us)
 {
-    loss_time = 0;
+    early_loss_deadline_us = 0;
 
-    uint64_t max_rtt = max(rtt_stats->get_latest_rtt(), rtt_stats->get_smoothed_rtt());
-    uint64_t delay_until_lost = max_rtt + max_rtt / 8; // (1 + 1/8) * RTT
+    uint64_t rtt = max(rtt_stats->get_latest_rtt(), rtt_stats->get_smoothed_rtt());
+    uint64_t loss_delay = rtt + rtt / 8; // (1 + 1/8) * RTT
 
-    vector<uint64_t> lost_packets;
-    for (const auto &entry : packet_history)
+    vector<uint64_t> lost;
+    for (const auto &[number, packet] : in_flight)
     {
-        const SentPacket &packet = entry.second;
-
-        if (packet.packet_number > largest_acked)
+        if (number > highest_acked)
         {
             break;
         }
 
-        uint64_t time_since_sent = (now_us > packet.send_time_us) ? (now_us - packet.send_time_us) : 0;
-        if (time_since_sent > delay_until_lost)
+        uint64_t age = (now_us > packet.send_time_us) ? (now_us - packet.send_time_us) : 0;
+        if (age > loss_delay)
         {
-            losses++;
-            lost_packets.push_back(packet.packet_number);
+            total_lost++;
+            lost.push_back(number);
         }
-        else if (loss_time == 0)
+        else if (early_loss_deadline_us == 0)
         {
-            // Not old enough yet: check again when it is (this is only entered once per call)
-            loss_time = now_us + delay_until_lost - time_since_sent;
+            // Too young for now: come back exactly when it reaches the limit (first such packet only)
+            early_loss_deadline_us = now_us + loss_delay - age;
         }
     }
 
-    for (uint64_t packet_number : lost_packets)
+    for (uint64_t number : lost)
     {
-        uint64_t length = packet_history[packet_number].length;
-        queue_packet_for_retransmission(packet_number);
-        congestion->on_packet_lost(packet_number, length, bytes_in_flight);
+        uint64_t length = in_flight[number].length;
+        move_to_lost_queue(number);
+        congestion->on_packet_lost(number, length, bytes_in_flight);
     }
 }
 
-void SentPacketHandler::update_loss_detection_alarm()
+void SentPacketHandler::rearm_timer()
 {
-    // Cancel the alarm if no packets are outstanding
-    if (packet_history.empty())
+    // No data in flight, nothing to wait for
+    if (in_flight.empty())
     {
-        alarm = 0;
+        timer_deadline_us = 0;
         return;
     }
 
-    if (loss_time != 0)
+    if (early_loss_deadline_us != 0)
     {
-        // Time based loss detection
-        alarm = loss_time;
+        timer_deadline_us = early_loss_deadline_us;
+        return;
     }
-    else if (rtt_stats->get_smoothed_rtt() != 0 && tlp_count < MAX_TAIL_LOSS_PROBES)
+
+    if (rtt_stats->get_smoothed_rtt() != 0 && probes_in_a_row < PROBES_BEFORE_RTO)
     {
-        // Tail loss probe
-        alarm = last_sent_time + compute_tlp_timeout();
+        timer_deadline_us = last_data_sent_us + probe_duration();
+        return;
     }
-    else
-    {
-        // RTO
-        alarm = last_sent_time + max(compute_rto_timeout(), MIN_RETRANSMISSION_TIME_US);
-    }
+
+    timer_deadline_us = last_data_sent_us + max(rto_duration(), MIN_TIMER_US);
 }
 
 uint64_t SentPacketHandler::get_alarm_timeout() const
 {
-    return alarm;
+    return timer_deadline_us;
 }
 
 void SentPacketHandler::on_alarm(uint64_t now_us)
 {
-    // Do we really have a packet to retransmit?
-    if (packet_history.empty())
+    // Everything got acknowledged in the meantime
+    if (in_flight.empty())
     {
-        alarm = 0;
+        timer_deadline_us = 0;
         return;
     }
 
-    if (loss_time != 0)
+    if (early_loss_deadline_us != 0)
     {
-        // Time based loss detection
-        detect_lost_packets(now_us);
+        // A packet just became old enough to call lost
+        declare_lost_packets(now_us);
     }
-    else if (tlp_count < MAX_TAIL_LOSS_PROBES)
+    else if (probes_in_a_row < PROBES_BEFORE_RTO)
     {
-        // Tail loss probe: the last packets may be lost and no later packet exists
-        // to reveal it, so resend the newest one to provoke an ACK
-        retransmit_tlp();
-        tlp_count++;
+        // Tail loss probe: if the last packets were lost, no later packet will ever reveal
+        // it, so the newest one is sent again to draw an ACK out of the peer
+        send_tail_probe();
+        probes_in_a_row++;
     }
     else
     {
-        // RTO: ask the path if it still looks alive
-        bool potentially_failed = false;
-        if (on_rto_callback != nullptr)
-        {
-            potentially_failed = on_rto_callback(last_sent_time);
-        }
+        // RTO: let the path decide whether it still looks alive
+        bool path_looks_broken = (rto_handler != nullptr) && rto_handler(last_data_sent_us);
 
-        if (potentially_failed)
+        if (path_looks_broken)
         {
-            // Everything outstanding on this path must go on another path
-            retransmit_all_packets();
+            // Nothing in flight here will arrive: hand all of it to the other paths
+            requeue_everything();
         }
         else
         {
-            retransmit_oldest_two_packets();
+            requeue_oldest_two();
 
-            // This RTO retransmission counts as the last transmission of the path, even if the
-            // scheduler sends the frames on another path. If the next RTO fires and still nothing
-            // was received on this path, the path is then reported as potentially failed.
-            // (Not in the reference implementation: there a broken path whose last ACK arrived
-            // after its last packet would give back only two packets per RTO, with the RTO
-            // doubling every time.)
-            last_sent_time = now_us;
+            // Treat this RTO resend as the path's latest transmission, even if the scheduler
+            // puts the frames on another path. Should the next RTO find the path still silent,
+            // it is then reported as potentially failed. Without this, a path whose last ACK
+            // came after its last packet would only give back two packets per RTO, while
+            // the RTO keeps doubling.
+            last_data_sent_us = now_us;
         }
-        rto_count++;
+        rtos_in_a_row++;
     }
 
-    update_loss_detection_alarm();
+    rearm_timer();
 }
 
-void SentPacketHandler::queue_packet_for_retransmission(uint64_t packet_number)
+void SentPacketHandler::move_to_lost_queue(uint64_t packet_number)
 {
-    auto it = packet_history.find(packet_number);
-    if (it == packet_history.end())
+    auto it = in_flight.find(packet_number);
+    if (it == in_flight.end())
     {
         return;
     }
     bytes_in_flight -= it->second.length;
-    retransmission_queue.push_back(it->second);
-    packet_history.erase(it);
+    lost_queue.push_back(it->second);
+    in_flight.erase(it);
 }
 
-void SentPacketHandler::queue_rto(uint64_t packet_number)
+void SentPacketHandler::give_up_on(uint64_t packet_number)
 {
-    uint64_t length = packet_history[packet_number].length;
-    queue_packet_for_retransmission(packet_number);
-    losses++;
+    uint64_t length = in_flight[packet_number].length;
+    move_to_lost_queue(packet_number);
+    total_lost++;
     congestion->on_packet_lost(packet_number, length, bytes_in_flight);
 }
 
-void SentPacketHandler::retransmit_tlp()
+void SentPacketHandler::send_tail_probe()
 {
-    if (!packet_history.empty())
+    if (!in_flight.empty())
     {
-        queue_packet_for_retransmission(packet_history.rbegin()->first);
+        move_to_lost_queue(in_flight.rbegin()->first);
     }
 }
 
-void SentPacketHandler::retransmit_all_packets()
+void SentPacketHandler::requeue_everything()
 {
-    while (!packet_history.empty())
+    while (!in_flight.empty())
     {
-        queue_rto(packet_history.begin()->first);
+        give_up_on(in_flight.begin()->first);
     }
     congestion->on_retransmission_timeout(true);
 }
 
-void SentPacketHandler::retransmit_oldest_two_packets()
+void SentPacketHandler::requeue_oldest_two()
 {
-    for (int i = 0; i < 2 && !packet_history.empty(); i++)
+    for (int i = 0; i < 2 && !in_flight.empty(); i++)
     {
-        queue_rto(packet_history.begin()->first);
+        give_up_on(in_flight.begin()->first);
     }
     congestion->on_retransmission_timeout(true);
 }
 
 bool SentPacketHandler::dequeue_packet_for_retransmission(SentPacket &out_packet)
 {
-    if (retransmission_queue.empty())
+    if (lost_queue.empty())
     {
         return false;
     }
-    out_packet = retransmission_queue.front();
-    retransmission_queue.pop_front();
-    retransmissions++;
+    out_packet = lost_queue.front();
+    lost_queue.pop_front();
+    total_resent++;
     return true;
 }
 
 bool SentPacketHandler::has_retransmissions() const
 {
-    return !retransmission_queue.empty();
+    return !lost_queue.empty();
 }
 
 bool SentPacketHandler::has_outstanding_stream_frames() const
 {
-    for (const auto &entry : packet_history)
-    {
-        for (const auto &frame : entry.second.frames)
-        {
-            if (frame.type == FRAME_STREAM)
-                return true;
-        }
-    }
-    return false;
+    return any_of(in_flight.begin(), in_flight.end(), [](const auto &entry) {
+        const vector<Frame> &frames = entry.second.frames;
+        return any_of(frames.begin(), frames.end(), [](const Frame &frame) { return frame.type == FRAME_STREAM; });
+    });
 }
 
-uint64_t SentPacketHandler::compute_rto_timeout() const
+uint64_t SentPacketHandler::rto_duration() const
 {
-    // RTO = smoothed RTT + 4 * mean deviation
+    // RTO = smoothed RTT + 4 * mean deviation, or the initial value before any sample
     uint64_t rto = 0;
     if (rtt_stats->get_smoothed_rtt() != 0)
     {
@@ -384,34 +373,37 @@ uint64_t SentPacketHandler::compute_rto_timeout() const
     }
     if (rto == 0)
     {
-        rto = DEFAULT_RTO_TIMEOUT_US;
+        rto = INITIAL_RTO_US;
     }
-    rto = max(rto, MIN_RTO_TIMEOUT_US);
+    rto = max(rto, MIN_RTO_US);
 
-    // Exponential backoff: the RTO doubles every time it fires without an ACK in between
-    uint32_t shift = min<uint32_t>(rto_count, 16);
+    // Exponential backoff: each RTO without an ACK in between doubles the next one
+    uint32_t shift = min<uint32_t>(rtos_in_a_row, 16);
     rto = rto << shift;
-    return min(rto, MAX_RTO_TIMEOUT_US);
+    return min(rto, MAX_RTO_US);
 }
 
-uint64_t SentPacketHandler::compute_tlp_timeout() const
+uint64_t SentPacketHandler::probe_duration() const
 {
     uint64_t rtt = rtt_stats->get_smoothed_rtt();
-    if (packet_history.size() > 1)
+    if (in_flight.size() > 1)
     {
-        return max(2 * rtt, rtt * 3 / 2 + MIN_RETRANSMISSION_TIME_US / 2);
+        return max(2 * rtt, rtt * 3 / 2 + MIN_TIMER_US / 2);
     }
-    return max(2 * rtt, MIN_TAIL_LOSS_PROBE_TIMEOUT_US);
+    return max(2 * rtt, MIN_PROBE_TIMEOUT_US);
 }
 
 bool SentPacketHandler::sending_allowed() const
 {
-    bool congestion_limited = bytes_in_flight > congestion->get_congestion_window();
-    bool max_tracked_limited = (retransmission_queue.size() + packet_history.size()) >= MAX_TRACKED_SENT_PACKETS;
+    // Too many packets to keep track of: wait, even for retransmissions
+    if (lost_queue.size() + in_flight.size() >= MAX_TRACKED_PACKETS)
+    {
+        return false;
+    }
 
-    // Retransmissions are always allowed, also when the congestion window is full
-    bool have_retransmissions = !retransmission_queue.empty();
-    return !max_tracked_limited && (!congestion_limited || have_retransmissions);
+    // Resending lost data is always allowed, even with a full congestion window
+    bool window_full = bytes_in_flight > congestion->get_congestion_window();
+    return !window_full || !lost_queue.empty();
 }
 
 uint64_t SentPacketHandler::get_bytes_in_flight() const
@@ -421,35 +413,35 @@ uint64_t SentPacketHandler::get_bytes_in_flight() const
 
 uint64_t SentPacketHandler::get_largest_acked() const
 {
-    return largest_acked;
+    return highest_acked;
 }
 
 uint64_t SentPacketHandler::get_least_unacked() const
 {
-    return largest_in_order_acked() + 1;
+    return highest_contiguous_acked() + 1;
 }
 
 uint64_t SentPacketHandler::get_last_sent_packet_number() const
 {
-    return last_sent_packet_number;
+    return highest_sent;
 }
 
 size_t SentPacketHandler::get_num_outstanding() const
 {
-    return packet_history.size();
+    return in_flight.size();
 }
 
 uint64_t SentPacketHandler::get_packets_sent() const
 {
-    return packets;
+    return total_sent;
 }
 
 uint64_t SentPacketHandler::get_retransmissions() const
 {
-    return retransmissions;
+    return total_resent;
 }
 
 uint64_t SentPacketHandler::get_losses() const
 {
-    return losses;
+    return total_lost;
 }

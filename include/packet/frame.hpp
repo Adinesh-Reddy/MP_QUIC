@@ -5,8 +5,8 @@
 
 using namespace std;
 
-// A packet is only a container. Everything it carries (data and control) is a frame,
-// so a frame is never tied to one packet or one path (paper, Section 2 and 3).
+// A packet is only a container: everything inside it, data and control alike, is a frame.
+// Frames are therefore not bound to the packet or the path that first carried them.
 const uint8_t FRAME_STREAM        = 0x01;
 const uint8_t FRAME_ACK              = 0x02;
 const uint8_t FRAME_CONNECTION_CLOSE = 0x03;
@@ -39,7 +39,7 @@ const size_t MAX_CLOSE_REASON_LENGTH            = 200;
 const size_t MAX_VARINT_SIZE = 8;
 const uint64_t MAX_VARINT_VALUE = (1ULL << 62) - 1;
 
-// The paper states that an ACK frame can acknowledge up to 256 packet number ranges
+// An ACK frame lists at most 256 ranges of received packet numbers
 const size_t MAX_ACK_RANGES = 256;
 
 // Carries application data. The offset is the position of the data in the stream,
@@ -89,9 +89,9 @@ struct PathInfo
     uint32_t rtt_us = 0; // its smoothed RTT (0 = not measured yet), or PATHS_RTT_POTENTIALLY_FAILED
 };
 
-// Gives the peer a global view of the paths of the sender: which ones it uses, their RTT,
-// and which ones it considers broken. The peer can then avoid a broken path at once
-// instead of discovering the failure with a timeout of its own (paper, Section 3 and 4.3).
+// Gives the peer an overview of the sender's paths: which ones exist, their RTT, and which
+// ones look broken. The peer can then stop using a broken path right away instead of
+// discovering the failure through a timeout of its own.
 struct PathsFrame
 {
     vector<PathInfo> paths;
@@ -104,7 +104,7 @@ struct NetworkAddress
     uint16_t port = 0;
 };
 
-// Advertises all the addresses owned by a host (paper, Section 3, Path Management).
+// Advertises every address a host owns, so the peer can open paths towards them.
 // A server with two interfaces tells the client its second address this way,
 // and the client can then open a path towards it.
 struct AddAddressFrame
