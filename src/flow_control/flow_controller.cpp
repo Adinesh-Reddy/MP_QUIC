@@ -68,18 +68,18 @@ uint64_t FlowController::get_send_window() const
 uint64_t FlowController::update_highest_received(uint64_t byte_offset)
 {
     // Reordered frames often end below what we have already seen: nothing changes then
-    if (byte_offset <= highest_offset)
+    if (byte_offset <= highest_rx_offset)
     {
         return 0;
     }
-    uint64_t increment = byte_offset - highest_offset;
-    highest_offset = byte_offset;
+    uint64_t increment = byte_offset - highest_rx_offset;
+    highest_rx_offset = byte_offset;
     return increment;
 }
 
 void FlowController::increment_highest_received(uint64_t increment)
 {
-    highest_offset += increment;
+    highest_rx_offset += increment;
 }
 
 void FlowController::add_bytes_read(uint64_t n, uint64_t now_us)
@@ -152,7 +152,7 @@ void FlowController::ensure_minimum_window_increment(uint64_t inc)
 
 bool FlowController::check_flow_control_violation() const
 {
-    return highest_offset > advertised_limit;
+    return highest_rx_offset > advertised_limit;
 }
 
 uint64_t FlowController::get_receive_window() const
@@ -165,9 +165,9 @@ uint64_t FlowController::get_receive_window_increment() const
     return window_step;
 }
 
-uint64_t FlowController::get_highest_received() const
+uint64_t FlowController::get_highest_rx_offset() const
 {
-    return highest_offset;
+    return highest_rx_offset;
 }
 
 uint64_t FlowController::get_bytes_read() const

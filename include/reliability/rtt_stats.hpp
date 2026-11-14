@@ -20,10 +20,10 @@ public:
     uint64_t get_mean_deviation() const;
 
 private:
-    uint64_t min_rtt = 0;
-    uint64_t latest_rtt = 0;
-    uint64_t smoothed_rtt = 0;
-    uint64_t mean_deviation = 0;
+    uint64_t rtt_floor = 0;
+    uint64_t recent_rtt = 0;
+    uint64_t srtt_us = 0;
+    uint64_t rttvar_us = 0;
 };
 
 #endif

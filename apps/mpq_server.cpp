@@ -140,7 +140,8 @@ static void answer_request(ConnectionState &state, uint32_t stream_id, const str
 static void send_file_pieces(ConnectionState &state)
 {
     Connection *connection = state.connection;
-    vector<char> chunk(FILE_CHUNK_SIZE);
+    // Allocated once and reused on every call (the server runs on a single thread)
+    static vector<char> chunk(FILE_CHUNK_SIZE);
 
     for (auto it = state.transfers.begin(); it != state.transfers.end();)
     {

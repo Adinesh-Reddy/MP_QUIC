@@ -112,11 +112,39 @@ grep -q "RESULT status=ok requests=10 answered=10" "$DIR/client.log" || fail "wr
 echo "  -> PASSED"
 
 # ---------------------------------------------------------------------------
+# A large file must flow without stalls: the server reads it piece by piece, so the
+# event loop keeps answering and no path's retransmission timer runs out. A path flagged
+# "may be broken" on a healthy loopback link would mean the sender stopped responding.
+echo "[TEST] 64 MB file over two paths, without any path flagged as broken..."
+dd if=/dev/urandom of="$DIR/files/test_64m.bin" bs=1M count=64 2>/dev/null \
+    || fail "could not create the 64 MB test file"
+EXPECTED_64M=$(sha256sum < "$DIR/files/test_64m.bin" | cut -d' ' -f1)
+SERVER_LINES_BEFORE=$(wc -l < "$DIR/server.log")
+
+"$CLIENT" --server 127.0.0.1:$PORT --local 127.0.1.1 --local 127.0.1.2 \
+          --get test_64m.bin --out "$DIR/out_64m.bin" --timeout 120 > "$DIR/client.log" 2>&1 \
+          || fail "the client reported an error"
+sleep 0.2 # the server prints its CONNECTION line once the client has closed
+
+RECEIVED=$(sha256sum < "$DIR/out_64m.bin" | cut -d' ' -f1)
+[ "$RECEIVED" = "$EXPECTED_64M" ] || fail "the received 64 MB file differs from the original"
+grep -q "RESULT status=ok .* paths=2" "$DIR/client.log" || fail "the 64 MB transfer did not use two paths"
+if grep -q "Path .* may be broken" "$DIR/client.log"; then
+    fail "the client flagged a path as broken during the 64 MB transfer"
+fi
+if tail -n +"$((SERVER_LINES_BEFORE + 1))" "$DIR/server.log" | grep -q "Path .* may be broken"; then
+    fail "the server flagged a path as broken during the 64 MB transfer"
+fi
+rm -f "$DIR/files/test_64m.bin" "$DIR/out_64m.bin" # 128 MB less in the temporary folder
+echo "  sha256 $RECEIVED"
+echo "  -> PASSED"
+
+# ---------------------------------------------------------------------------
 echo "[TEST] The server served all of them as separate connections and is still running..."
 kill -0 "$SERVER_PID" 2>/dev/null || fail "the server stopped"
 sleep 0.2
 CONNECTIONS=$(grep -c "^CONNECTION " "$DIR/server.log")
-[ "$CONNECTIONS" -eq 6 ] || fail "the server saw $CONNECTIONS connections, expected 6"
+[ "$CONNECTIONS" -eq 7 ] || fail "the server saw $CONNECTIONS connections, expected 7"
 [ "$(wc -l < "$DIR/server_stats.csv")" -ge 2 ] || fail "the server wrote no statistics"
 echo "  -> PASSED"
 
