@@ -131,6 +131,24 @@ bool UDPSocket::set_buffer_size(int bytes)
         ok = false;
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes)) < 0)
         ok = false;
+
+    // Linux does not refuse a size above net.core.rmem_max / wmem_max: it silently caps it.
+    // Read the sizes back (the kernel reports twice the usable size) and say so, because a
+    // small receive buffer loses whole bursts of packets on fast, large transfers.
+    int receive_size = 0;
+    int send_size = 0;
+    socklen_t length = sizeof(int);
+    getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &receive_size, &length);
+    length = sizeof(int);
+    getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &send_size, &length);
+    if (receive_size / 2 < bytes || send_size / 2 < bytes)
+    {
+        cout << "Note: this system limits the UDP buffers of the socket on port " << get_local_port()
+             << " to " << receive_size / 2 / 1024 << " kB (receive) and " << send_size / 2 / 1024
+             << " kB (send) instead of the " << bytes / 1024 << " kB asked for.\n"
+             << "  Large transfers may then lose packets in bursts. To raise the limit (until reboot):\n"
+             << "  sudo sysctl -w net.core.rmem_max=" << bytes << " net.core.wmem_max=" << bytes << "\n";
+    }
     return ok;
 }
 
