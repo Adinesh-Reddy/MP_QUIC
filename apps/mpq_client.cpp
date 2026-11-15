@@ -4,6 +4,7 @@
 #include "connection/client.hpp"
 #include "app_common.hpp"
 #include "sha256.hpp"
+#include "file_writer.hpp"
 
 using namespace std;
 
@@ -66,8 +67,9 @@ static int run(int argc, char **argv)
         return 1;
     }
 
-    ofstream out(out_path, ios::binary | ios::trunc);
-    if (!out)
+    // The file is written by a thread of its own, so a slow disk never holds up the network loop
+    FileWriter out;
+    if (!out.open(out_path))
     {
         cout << "error: cannot create the file " << out_path
              << " given with --out (does the folder exist, and may you write there?)\n";
@@ -91,7 +93,7 @@ static int run(int argc, char **argv)
     uint64_t expected_bytes = 0;
     uint64_t received_bytes = 0;
     bool finished = false;      // the end of the stream (FIN) arrived
-    bool write_failed = false;  // the output file refused data (disk full, ...)
+    bool write_failed = false;  // the disk thread could not write (disk full, ...)
     string error;
     uint64_t finish_us = 0;
     Sha256 sha;
@@ -128,14 +130,7 @@ static int run(int argc, char **argv)
         {
             const uint8_t *body = data.data() + body_start;
             size_t body_length = data.size() - body_start;
-            out.write(reinterpret_cast<const char *>(body), static_cast<streamsize>(body_length));
-            if (!out)
-            {
-                // The rest of the file could not be saved either: stop instead of downloading it
-                error = "could not write to " + out_path + " (is the disk full?)";
-                write_failed = true;
-                return;
-            }
+            out.write(body, body_length); // only copies into memory: returns at once
             sha.update(body, body_length);
             received_bytes += body_length;
         }
@@ -160,8 +155,10 @@ static int run(int argc, char **argv)
         client.on_tick();
         stats.maybe_sample(*connection, received_bytes);
 
-        if (write_failed)
+        if (out.failed())
         {
+            // The rest of the file could not be saved either: stop instead of downloading it
+            write_failed = true;
             connection->close("the client could not save the file");
             manager.stop();
         }
@@ -195,12 +192,12 @@ static int run(int argc, char **argv)
 
     manager.run(1);
 
-    // The last bytes are only written to the disk here (the stream buffers them), so a full
-    // disk can show up at this point even when every write() above succeeded
-    out.close();
-    if (error.empty() && !out)
+    // Wait until the disk thread has saved everything. Its error, if any, says what went wrong:
+    // a failed write during the download, or a failure when the last bytes were flushed.
+    string write_error = out.finish();
+    if (!write_error.empty() && (error.empty() || write_failed))
     {
-        error = "could not finish writing " + out_path + " (is the disk full?)";
+        error = write_error;
     }
     stats.sample(*connection, received_bytes);
 
