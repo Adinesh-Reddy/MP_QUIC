@@ -25,7 +25,7 @@ static void usage()
          << "  --out FILE        write request,sent_ms,delay_ms to FILE (CSV)\n";
 }
 
-int main(int argc, char **argv)
+static int run(int argc, char **argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);
 
@@ -184,4 +184,20 @@ int main(int argc, char **argv)
     cout << "\n";
 
     return (answered == count && error.empty()) ? 0 : 1;
+}
+
+// An exception means a bug in the program (for example a packet built larger than the
+// limit). Print it in plain words and exit, instead of an unexplained "terminate called".
+int main(int argc, char **argv)
+{
+    try
+    {
+        return run(argc, argv);
+    }
+    catch (const exception &e)
+    {
+        cout << "mpq_reqres stopped because of an internal error: " << e.what() << "\n"
+             << "  This is a bug in the program, not a problem of the network or of your input.\n";
+        return 3;
+    }
 }

@@ -220,6 +220,50 @@ void test_receive_stream_fin()
     std::cout << "  -> PASSED\n";
 }
 
+// The end of a stream is fixed by its first FIN. Frames that disagree with it are refused
+// (and the connection then closes with a protocol error); frames that agree are accepted.
+void test_receive_stream_end_is_fixed()
+{
+    std::cout << "[TEST] Receive stream: frames that move the end of the stream are refused...\n";
+
+    auto frame = [](uint64_t offset, const std::string &content, bool fin) {
+        StreamFrame f;
+        f.stream_id = 1;
+        f.offset = offset;
+        f.data = bytes(content);
+        f.fin = fin;
+        return f;
+    };
+
+    // 1. A second FIN with a different end (the first one ended the stream at 10)
+    {
+        ReceiveStream stream(1);
+        assert(stream.add_stream_frame(frame(5, "56789", true)));
+        assert(!stream.add_stream_frame(frame(5, "567", true)));      // would end at 8
+        assert(!stream.add_stream_frame(frame(5, "56789AB", true)));  // would end at 12
+        assert(stream.add_stream_frame(frame(5, "56789", true)));     // the same FIN again: fine
+        assert(stream.add_stream_frame(frame(2, "23456789", true)));  // differently cut, same end: fine
+    }
+
+    // 2. Data beyond the end set by a FIN
+    {
+        ReceiveStream stream(1);
+        assert(stream.add_stream_frame(frame(0, "01234", true)));
+        assert(!stream.add_stream_frame(frame(3, "345", false)));     // ends at 6, after the end at 5
+        assert(stream.add_stream_frame(frame(1, "1234", false)));     // inside the stream: fine
+    }
+
+    // 3. Data arrives first, then a FIN that would end the stream before that data
+    {
+        ReceiveStream stream(1);
+        assert(stream.add_stream_frame(frame(5, "56789", false)));    // bytes up to 10 exist
+        assert(!stream.add_stream_frame(frame(0, "0123", true)));     // a FIN ending at 4
+        assert(stream.add_stream_frame(frame(10, "", true)));         // a FIN at 10: fine
+    }
+
+    std::cout << "  -> PASSED\n";
+}
+
 // ---------------------------------------------------------------------------
 // Flow control
 // ---------------------------------------------------------------------------
@@ -453,6 +497,40 @@ void test_time_based_loss_detection()
     std::cout << "  -> PASSED\n";
 }
 
+// Without any RTT sample a probe timer cannot be computed, so the alarm armed after the
+// first packets is an RTO (500 ms), and when it fires it must act as one: ask the path
+// whether it looks broken and resend the oldest packets, not send a tail loss probe.
+// (Before this was fixed, two probes went out first and the first RTO came only at 1.5 s.)
+void test_first_alarm_without_rtt_is_an_rto()
+{
+    std::cout << "[TEST] Timers: with no RTT sample yet, the first alarm is an RTO at 500 ms...\n";
+
+    RttStats rtt;
+    FixedWindowCongestion congestion;
+    SentPacketHandler h(&rtt, &congestion);
+
+    int rto_calls = 0;
+    h.set_rto_callback([&](uint64_t /*last_sent_time_us*/) {
+        rto_calls++;
+        return true; // nothing came back: the path looks broken
+    });
+
+    assert(h.sent_packet(1, data_frames(), 1000, T0));
+    assert(h.sent_packet(2, data_frames(), 1000, T0 + 1000));
+    assert(rtt.get_smoothed_rtt() == 0);
+    assert(h.get_alarm_timeout() == T0 + 1000 + LossRecovery::INITIAL_RTO_US);
+
+    h.on_alarm(T0 + 1000 + LossRecovery::INITIAL_RTO_US);
+    assert(rto_calls == 1);                  // handled as an RTO ...
+    assert(h.get_num_outstanding() == 0);    // ... the broken path gives back everything
+    SentPacket p;
+    assert(h.dequeue_packet_for_retransmission(p) && p.packet_number == 1);
+    assert(h.dequeue_packet_for_retransmission(p) && p.packet_number == 2);
+    assert(h.get_losses() == 2);
+
+    std::cout << "  -> PASSED\n";
+}
+
 void test_tail_loss_probe_and_rto()
 {
     std::cout << "[TEST] Timers: 2 tail loss probes, then RTO with exponential backoff...\n";
@@ -560,11 +638,18 @@ void test_retransmissions_bypass_congestion_window()
     FixedWindowCongestion congestion(1); // 1 packet = 1460 bytes
     SentPacketHandler h(&rtt, &congestion);
 
-    for (uint64_t pn = 1; pn <= 3; pn++)
-        assert(h.sent_packet(pn, data_frames(), 1350, T0 + pn));
+    // A first packet and its ACK give the path an RTT, so the timer below is a tail loss probe
+    assert(h.sent_packet(1, data_frames(), 1350, T0));
+    AckFrame ack;
+    ack.largest_acked = 1;
+    ack.ranges = {{1, 1}};
+    assert(h.received_ack(ack, 1, T0 + 50000));
+
+    for (uint64_t pn = 2; pn <= 4; pn++)
+        assert(h.sent_packet(pn, data_frames(), 1350, T0 + 50000 + pn));
     assert(!h.sending_allowed()); // 4050 bytes in flight
 
-    // The timer fires and queues packet 3 for retransmission: 2700 bytes are still in flight
+    // The probe timer fires and queues packet 4 for retransmission: 2700 bytes are still in flight
     h.on_alarm(T0 + 600000);
     assert(h.get_bytes_in_flight() == 2700);
     assert(h.has_retransmissions());
@@ -581,7 +666,10 @@ void test_path_potentially_failed()
 {
     std::cout << "[TEST] Path is marked potentially failed by an RTO without network activity...\n";
 
-    // 1. Nothing is ever received on the path
+    // The paths below never got an ACK, so they have no RTT sample: every alarm is an RTO
+    // (a tail loss probe needs an RTT to time it).
+
+    // 1. Nothing is ever received on the path: the first RTO marks it
     {
         Path path(1, "127.0.0.1", 0, "127.0.0.1", 0, nullptr);
         SentPacketHandler *h = path.get_sent_packet_handler();
@@ -589,13 +677,10 @@ void test_path_potentially_failed()
 
         for (uint64_t pn = 1; pn <= 4; pn++)
             assert(h->sent_packet(path.pop_packet_number(), data_frames(), 1000, T0 + pn * 1000));
-
-        h->on_alarm(T0 + 600000);  // probe
-        h->on_alarm(T0 + 1200000); // probe
+        assert(h->get_alarm_timeout() == T0 + 4000 + LossRecovery::INITIAL_RTO_US);
         assert(!path.is_potentially_failed());
-        assert(h->get_num_outstanding() == 2);
 
-        h->on_alarm(T0 + 1800000); // RTO
+        h->on_alarm(T0 + 4000 + LossRecovery::INITIAL_RTO_US); // RTO
         assert(path.is_potentially_failed());
 
         // Everything that was outstanding on the path is given back for retransmission
@@ -620,11 +705,9 @@ void test_path_potentially_failed()
             assert(h->sent_packet(path.pop_packet_number(), data_frames(), 1000, T0 + pn * 1000));
         path.set_last_network_activity_time(T0 + 100000);
 
-        h->on_alarm(T0 + 600000);
-        h->on_alarm(T0 + 1200000);
-        h->on_alarm(T0 + 1800000); // RTO
+        h->on_alarm(T0 + 600000); // RTO
         assert(!path.is_potentially_failed());
-        assert(h->get_num_outstanding() == 0); // the two oldest (the two newest went as probes)
+        assert(h->get_num_outstanding() == 2); // only the two oldest are given back
     }
 
     // 3. The path breaks right after an ACK arrived: the first RTO still sees activity after the
@@ -637,16 +720,14 @@ void test_path_potentially_failed()
             assert(h->sent_packet(path.pop_packet_number(), data_frames(), 1000, T0 + pn * 1000));
         path.set_last_network_activity_time(T0 + 100000); // last packet ever received on this path
 
-        h->on_alarm(T0 + 600000);  // probe
-        h->on_alarm(T0 + 1200000); // probe
-        h->on_alarm(T0 + 1800000); // 1st RTO: two oldest packets
+        h->on_alarm(T0 + 600000);  // 1st RTO: two oldest packets
         assert(!path.is_potentially_failed());
-        assert(h->get_num_outstanding() == 4);
+        assert(h->get_num_outstanding() == 6);
 
-        h->on_alarm(T0 + 3000000); // 2nd RTO: nothing was received since the 1st one
+        h->on_alarm(T0 + 1800000); // 2nd RTO: nothing was received since the 1st one
         assert(path.is_potentially_failed());
         assert(h->get_num_outstanding() == 0); // everything is given back at once
-        assert(h->get_losses() == 6);
+        assert(h->get_losses() == 8);          // 2 at the 1st RTO + the 6 others
     }
 
     std::cout << "  -> PASSED\n";
@@ -658,10 +739,12 @@ int main()
     test_sorter_reordering();
     test_sorter_duplicates_and_overlaps();
     test_receive_stream_fin();
+    test_receive_stream_end_is_fixed();
     test_flow_controller_sender();
     test_flow_controller_receiver();
     test_flow_control_manager();
     test_time_based_loss_detection();
+    test_first_alarm_without_rtt_is_an_rto();
     test_tail_loss_probe_and_rto();
     test_retransmissions_bypass_congestion_window();
     test_path_potentially_failed();

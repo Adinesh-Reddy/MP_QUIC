@@ -15,8 +15,13 @@ public:
 
     uint32_t get_stream_id() const;
 
-    // Stores a received STREAM frame (in any order, duplicates are fine)
-    void add_stream_frame(const StreamFrame &frame);
+    // Stores a received STREAM frame (in any order, duplicates are fine).
+    // Returns false, and stores nothing, if the frame contradicts the end of the stream:
+    //   - a FIN that puts the end somewhere else than an earlier FIN did,
+    //   - data beyond the end set by a FIN,
+    //   - a FIN that puts the end below data that was already received.
+    // A correct peer never does this; the connection treats it as a protocol error.
+    bool add_stream_frame(const StreamFrame &frame);
 
     // Next piece of data in stream order. fin is true on the piece that ends the stream.
     // Returns false if the next byte has not arrived yet.
@@ -39,6 +44,9 @@ private:
     bool fin_known = false;
     uint64_t fin_offset = 0;
     bool fin_delivered = false;
+
+    // Largest offset + length of any frame accepted so far (the stream is at least this long)
+    uint64_t highest_end = 0;
 };
 
 #endif

@@ -458,9 +458,43 @@ void run_scenario(const Scenario &scenario)
     std::cout << "  -> PASSED\n";
 }
 
+// A packet with the invalid packet number 0 proves nothing about its path: it must not clear
+// the "potentially failed" mark nor count as activity. A valid packet afterwards does both.
+static void test_invalid_packet_does_not_revive_path()
+{
+    std::cout << "\n[TEST] A packet numbered 0 does not revive a potentially failed path...\n";
+
+    UDPSocket socket;
+    assert(socket.bind("127.0.0.1", 0));
+    const uint64_t CONNECTION_ID = 77;
+    Connection connection(CONNECTION_ID);
+    // The peer address is the discard port: the ACKs we send there are simply dropped
+    Path path(0, "127.0.0.1", socket.get_local_port(), "127.0.0.1", 9, &socket);
+    assert(connection.add_path(&path));
+    path.set_potentially_failed(true);
+
+    Packet invalid(FLAG_NONE, CONNECTION_ID, 0, 0);
+    invalid.add_frame(Frame::make_ping());
+    std::vector<uint8_t> raw = invalid.serialize();
+    connection.handle_packet(raw.data(), raw.size());
+    assert(path.is_potentially_failed());
+    assert(path.get_last_network_activity_time() == 0);
+
+    Packet valid(FLAG_NONE, CONNECTION_ID, 0, 1);
+    valid.add_frame(Frame::make_ping());
+    raw = valid.serialize();
+    connection.handle_packet(raw.data(), raw.size());
+    assert(!path.is_potentially_failed());
+    assert(path.get_last_network_activity_time() != 0);
+
+    std::cout << "  -> PASSED\n";
+}
+
 int main()
 {
     std::cout << "=== Running Two-Path End-to-End Tests (Phase 4 to 10) ===\n";
+
+    test_invalid_packet_does_not_revive_path();
 
     // ---- Reliability (Phase 4 to 7) ----
     Scenario clean;

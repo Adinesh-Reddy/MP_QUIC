@@ -258,10 +258,12 @@ void SentPacketHandler::on_alarm(uint64_t now_us)
         // A packet just became old enough to call lost
         declare_lost_packets(now_us);
     }
-    else if (probes_in_a_row < PROBES_BEFORE_RTO)
+    else if (rtt_stats->get_smoothed_rtt() != 0 && probes_in_a_row < PROBES_BEFORE_RTO)
     {
         // Tail loss probe: if the last packets were lost, no later packet will ever reveal
-        // it, so the newest one is sent again to draw an ACK out of the peer
+        // it, so the newest one is sent again to draw an ACK out of the peer.
+        // Same condition as in rearm_timer(): a probe timer needs an RTT, so without an RTT
+        // sample the alarm that just fired was an RTO and is handled as one below.
         send_tail_probe();
         probes_in_a_row++;
     }

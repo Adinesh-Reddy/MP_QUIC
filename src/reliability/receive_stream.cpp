@@ -14,19 +14,35 @@ uint32_t ReceiveStream::get_stream_id() const
     return stream_id;
 }
 
-void ReceiveStream::add_stream_frame(const StreamFrame &frame)
+bool ReceiveStream::add_stream_frame(const StreamFrame &frame)
 {
+    uint64_t end = frame.offset + frame.data.size();
+
+    // Once known, the end of the stream never moves
+    if (fin_known && (frame.fin ? end != fin_offset : end > fin_offset))
+    {
+        return false;
+    }
+    // A first FIN cannot cut off bytes that have already arrived
+    if (frame.fin && !fin_known && end < highest_end)
+    {
+        return false;
+    }
+
+    highest_end = max(highest_end, end);
+
     // The FIN tells where the stream ends
-    if (frame.fin && !fin_known)
+    if (frame.fin)
     {
         fin_known = true;
-        fin_offset = frame.offset + frame.data.size();
+        fin_offset = end;
     }
 
     if (!frame.data.empty())
     {
         sorter.push(frame.offset, frame.data);
     }
+    return true;
 }
 
 bool ReceiveStream::pop(uint64_t &offset, vector<uint8_t> &data, bool &fin)
