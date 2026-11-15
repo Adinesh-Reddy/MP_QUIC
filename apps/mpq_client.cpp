@@ -25,7 +25,7 @@ static void usage()
          << "  --timeout SEC    give up after SEC seconds (default: 600)\n";
 }
 
-int main(int argc, char **argv)
+static int run(int argc, char **argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0);
 
@@ -91,6 +91,7 @@ int main(int argc, char **argv)
     uint64_t expected_bytes = 0;
     uint64_t received_bytes = 0;
     bool finished = false;      // the end of the stream (FIN) arrived
+    bool write_failed = false;  // the output file refused data (disk full, ...)
     string error;
     uint64_t finish_us = 0;
     Sha256 sha;
@@ -128,6 +129,13 @@ int main(int argc, char **argv)
             const uint8_t *body = data.data() + body_start;
             size_t body_length = data.size() - body_start;
             out.write(reinterpret_cast<const char *>(body), static_cast<streamsize>(body_length));
+            if (!out)
+            {
+                // The rest of the file could not be saved either: stop instead of downloading it
+                error = "could not write to " + out_path + " (is the disk full?)";
+                write_failed = true;
+                return;
+            }
             sha.update(body, body_length);
             received_bytes += body_length;
         }
@@ -152,7 +160,12 @@ int main(int argc, char **argv)
         client.on_tick();
         stats.maybe_sample(*connection, received_bytes);
 
-        if (finished)
+        if (write_failed)
+        {
+            connection->close("the client could not save the file");
+            manager.stop();
+        }
+        else if (finished)
         {
             // Everything is here: the last ACKs leave, the server is told, and we stop
             connection->close("transfer complete");
@@ -181,7 +194,14 @@ int main(int argc, char **argv)
     connection->send_pending();
 
     manager.run(1);
+
+    // The last bytes are only written to the disk here (the stream buffers them), so a full
+    // disk can show up at this point even when every write() above succeeded
     out.close();
+    if (error.empty() && !out)
+    {
+        error = "could not finish writing " + out_path + " (is the disk full?)";
+    }
     stats.sample(*connection, received_bytes);
 
     if (error.empty() && !finished)
@@ -208,4 +228,20 @@ int main(int argc, char **argv)
          << " goodput_kbps=" << goodput_kbps << " sha256=" << sha.hex_digest()
          << " paths=" << connection->get_paths().size() << "\n";
     return 0;
+}
+
+// An exception means a bug in the program (for example a packet built larger than the
+// limit). Print it in plain words and exit, instead of an unexplained "terminate called".
+int main(int argc, char **argv)
+{
+    try
+    {
+        return run(argc, argv);
+    }
+    catch (const exception &e)
+    {
+        cout << "mpq_client stopped because of an internal error: " << e.what() << "\n"
+             << "  This is a bug in the program, not a problem of the network or of your input.\n";
+        return 3;
+    }
 }

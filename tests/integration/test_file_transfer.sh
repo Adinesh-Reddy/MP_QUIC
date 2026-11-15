@@ -140,11 +140,41 @@ echo "  sha256 $RECEIVED"
 echo "  -> PASSED"
 
 # ---------------------------------------------------------------------------
+# /dev/full accepts open() but refuses every write with "no space left on device".
+# The client must report the failure instead of RESULT status=ok.
+EXPECTED_CONNECTIONS=7
+if [ -w /dev/full ]; then
+    echo "[TEST] Disk full while the file arrives: the client reports a failure..."
+    if "$CLIENT" --server 127.0.0.1:$PORT --local 127.0.1.1 --get data.bin \
+                 --out /dev/full --timeout 60 > "$DIR/client.log" 2>&1; then
+        fail "the client should have failed: nothing could be written"
+    fi
+    grep -q "RESULT status=failed .*could not write to /dev/full" "$DIR/client.log" \
+        || fail "the write error was not reported"
+    echo "  -> PASSED"
+
+    # 100 bytes stay in the output buffer until close(): the error only shows up there
+    echo "[TEST] Disk full when the file is closed: the client reports a failure..."
+    head -c 100 /dev/urandom > "$DIR/files/small.bin"
+    if "$CLIENT" --server 127.0.0.1:$PORT --local 127.0.1.1 --get small.bin \
+                 --out /dev/full --timeout 60 > "$DIR/client.log" 2>&1; then
+        fail "the client should have failed: the file could not be closed"
+    fi
+    grep -q "RESULT status=failed .*could not finish writing /dev/full" "$DIR/client.log" \
+        || fail "the error at close() was not reported"
+    echo "  -> PASSED"
+    EXPECTED_CONNECTIONS=9
+else
+    echo "[TEST] Disk full: skipped (this system has no /dev/full)"
+fi
+
+# ---------------------------------------------------------------------------
 echo "[TEST] The server served all of them as separate connections and is still running..."
 kill -0 "$SERVER_PID" 2>/dev/null || fail "the server stopped"
 sleep 0.2
 CONNECTIONS=$(grep -c "^CONNECTION " "$DIR/server.log")
-[ "$CONNECTIONS" -eq 7 ] || fail "the server saw $CONNECTIONS connections, expected 7"
+[ "$CONNECTIONS" -eq "$EXPECTED_CONNECTIONS" ] \
+    || fail "the server saw $CONNECTIONS connections, expected $EXPECTED_CONNECTIONS"
 [ "$(wc -l < "$DIR/server_stats.csv")" -ge 2 ] || fail "the server wrote no statistics"
 echo "  -> PASSED"
 

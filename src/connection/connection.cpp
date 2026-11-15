@@ -627,19 +627,20 @@ void Connection::handle_packet(const uint8_t *data, size_t length)
     }
 
     uint64_t now_us = Packet::current_time_us();
-    path->set_last_network_activity_time(now_us);
-    last_received_us = now_us;
-
-    // A packet just arrived on this path, so the path works
-    path->set_potentially_failed(false);
 
     ReceivedPacketHandler *received_handler = path->get_received_packet_handler();
     bool duplicate = received_handler->is_duplicate(packet.get_packet_number());
 
     if (!received_handler->received_packet(packet.get_packet_number(), packet.is_retransmittable(), now_us))
     {
-        return; // invalid packet number
+        return; // invalid packet number: it proves nothing, so no timer or path state changes
     }
+
+    // Only a valid packet counts as a sign of life: it refreshes the idle timer and the
+    // path's activity time (used by the RTO check), and shows that the path works
+    path->set_last_network_activity_time(now_us);
+    last_received_us = now_us;
+    path->set_potentially_failed(false);
 
     // A duplicate is still acknowledged, but its frames were handled the first time
     if (!duplicate)
@@ -755,7 +756,12 @@ void Connection::deliver_stream_frame(const StreamFrame &frame, uint64_t now_us)
     ReceiveStream &stream = receive_streams.try_emplace(stream_id, stream_id).first->second;
 
     // The reorder buffer holds the frame until everything before it has arrived
-    stream.add_stream_frame(frame);
+    if (!stream.add_stream_frame(frame))
+    {
+        abort_with("the other side changed where stream " + to_string(stream_id) +
+                   " ends (its STREAM frames disagree about the last byte; protocol error)");
+        return;
+    }
 
     // Hand over everything that is now contiguous
     uint64_t offset = 0;

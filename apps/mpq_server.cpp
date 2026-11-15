@@ -140,8 +140,8 @@ static void answer_request(ConnectionState &state, uint32_t stream_id, const str
 static void send_file_pieces(ConnectionState &state)
 {
     Connection *connection = state.connection;
-    // Allocated once and reused on every call (the server runs on a single thread)
-    static vector<char> chunk(FILE_CHUNK_SIZE);
+    // Allocated once per thread and reused on every call (today the server has one thread)
+    static thread_local vector<char> chunk(FILE_CHUNK_SIZE);
 
     for (auto it = state.transfers.begin(); it != state.transfers.end();)
     {
@@ -179,7 +179,7 @@ static void send_file_pieces(ConnectionState &state)
     }
 }
 
-int main(int argc, char **argv)
+static int run(int argc, char **argv)
 {
     setvbuf(stdout, nullptr, _IOLBF, 0); // a line is written as soon as it is complete, also into a file
 
@@ -309,4 +309,20 @@ int main(int argc, char **argv)
     manager.run(1); // 1 ms: the timers of the protocol need a finer clock than the 10 ms default
 
     return 0;
+}
+
+// An exception means a bug in the program (for example a packet built larger than the
+// limit). Print it in plain words and exit, instead of an unexplained "terminate called".
+int main(int argc, char **argv)
+{
+    try
+    {
+        return run(argc, argv);
+    }
+    catch (const exception &e)
+    {
+        cout << "mpq_server stopped because of an internal error: " << e.what() << "\n"
+             << "  This is a bug in the program, not a problem of the network or of your input.\n";
+        return 3;
+    }
 }
