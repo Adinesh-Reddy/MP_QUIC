@@ -35,7 +35,7 @@ public:
     virtual string get_name() const=0;
 };
 
-// Fixed window (does not change; used for unit tests and baseline runs)
+// Fixed window (does not change; used only by the unit tests)
 class FixedWindowCongestion : public CongestionController
 {
 public:

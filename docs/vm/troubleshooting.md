@@ -25,16 +25,16 @@ Start with the path checks on the client ([client.md](client.md) 5.6) and on the
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| `mpq_client` waits, then `error="the file was not complete after … seconds (--timeout) …"` | `mpq_server` not running, a firewall, or a path cut | Start it on the server ([server.md](server.md) 4.7); `sudo ufw status`; ping both paths |
-| `RESULT status=failed … error="the server refused the request: file not found"` | The test files are not in `evaluation/files` on the server | [server.md](server.md) 4.6; `mpq_server` must run with `--dir evaluation/files` |
+| `mpq_client` waits, then `error="timed out after … s"` | `mpq_server` not running, a firewall, or a path cut | Start it on the server ([server.md](server.md) 4.7); `sudo ufw status`; ping both paths |
+| `RESULT status=failed … error="server error: file not found"` | The test files are not in `evaluation/files` on the server | [server.md](server.md) 4.6; `mpq_server` must run with `--dir evaluation/files` |
 | `RESULT … paths=1` in a two-path run | Path B blocked, or the server does not listen on 10.0.3.2 | Ping path B; `mpq_server` needs both `--listen` options |
 | Everything fails after a handover test | Path A still cut by the tc filter on the client | `sudo tc qdisc del dev $IF_A clsact` on the client; check the router shaping |
 | MPTCP uses only one link | MPTCP endpoints or limits | Server: `ip mptcp endpoint show` (two `signal`); client: `ip mptcp limits` ([client.md](client.md) 5.5); `nstat -az \| grep MPJoin` |
 | `mptcpize: command not found` | Package missing | `sudo apt install mptcpize` (needs Internet: [host-kvm.md](host-kvm.md) 1.4) |
 | `iperf3: unable to connect` | The iperf3 servers are not running | Terminals 2 and 3 of [server.md](server.md) 4.7 (ports 5201 and 5202) |
 | TCP/MPTCP well below the link rate | Offloads on; small queue | Router: the `ethtool` lines of 2.4/3.4; client/server: [client.md](client.md) 5.4 / [server.md](server.md) 4.4 |
-| `mpq_server`: "could not use the address … (Address already in use)" | An old server still runs | `pkill mpq_server` |
-| `mpq_client`: "This computer does not have the address …" | The `--local` address is not set on this VM | `ip -br -4 addr`; [client.md](client.md) 5.3 |
+| `mpq_server`: "[ERROR] Cannot bind … (Address already in use)" | An old server still runs | `pkill mpq_server` |
+| `mpq_client`: "[ERROR] Cannot bind … (Cannot assign requested address)" | The `--local` address is not set on this VM | `ip -br -4 addr`; [client.md](client.md) 5.3 |
 
 ## Looking inside
 

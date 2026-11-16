@@ -111,7 +111,7 @@ static int run(int argc, char **argv)
         if(header_done&&error.empty()&&body_start<data.size()){
             const uint8_t *body=data.data()+body_start;
             size_t body_length=data.size()-body_start;
-            out.write(body, body_length); // copy to memory queue (non-blocking)
+            out.write(body, body_length); // copy to memory queue (waits only if 64 MB are queued)
             sha.update(body, body_length);
             received_bytes+=body_length;
         }

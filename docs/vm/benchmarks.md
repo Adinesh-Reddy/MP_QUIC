@@ -153,7 +153,7 @@ sudo tc filter add dev $IF_A ingress matchall action drop
 
 What to see in terminal 1:
 
-- a line `Path 0 may be broken (marked "potentially failed") …` less than a second after the cut;
+- a line `[PATH] Path 0 may be broken (no reply before RTO) …` less than a second after the cut;
 - the `REQUEST id=… delay_ms=…` lines go on: the delay goes from about 20 ms to about 50 ms
   (now over path B), with one larger delay at the cut;
 - at the end `RESULT status=ok requests=35 answered=35 …`.

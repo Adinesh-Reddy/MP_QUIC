@@ -28,14 +28,14 @@ public:
 
     /*
      Build next STREAM frame fitting within max_frame_size and send_window.
-     Returns false if packet space or flow control window is full.
+     Returns false if nothing is waiting, or packet space or flow control window is full.
     */
     bool pop_stream_frame(size_t max_frame_size, Frame &out_frame, uint64_t send_window=UINT64_MAX);
 
     // Next byte offset to send
     uint64_t get_next_offset() const;
 
-    // Bytes written by app that are not framed yet (for chunked file writes)
+    // Bytes written by app that are not framed yet (lets the server send a file in chunks)
     size_t get_unsent_bytes() const;
 
 private:
