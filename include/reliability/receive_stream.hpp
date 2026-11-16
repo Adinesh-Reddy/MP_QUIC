@@ -1,13 +1,13 @@
 #ifndef RECEIVE_STREAM_HPP
 #define RECEIVE_STREAM_HPP
 
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 #include "packet/frame.hpp"
 #include "reliability/stream_frame_sorter.hpp"
 
 using namespace std;
 
-// Receiving side of one stream: reorder buffer + end of stream (FIN) tracking
+// Receive side of one stream: reorders frames and tracks FIN
 class ReceiveStream
 {
 public:
@@ -15,22 +15,19 @@ public:
 
     uint32_t get_stream_id() const;
 
-    // Stores a received STREAM frame (in any order, duplicates are fine).
-    // Returns false, and stores nothing, if the frame contradicts the end of the stream:
-    //   - a FIN that puts the end somewhere else than an earlier FIN did,
-    //   - data beyond the end set by a FIN,
-    //   - a FIN that puts the end below data that was already received.
-    // A correct peer never does this; the connection treats it as a protocol error.
+    /*
+     Add a STREAM frame (out-of-order and duplicates are ok).
+     Returns false if it conflicts with stream end (moved FIN or data past FIN).
+    */
     bool add_stream_frame(const StreamFrame &frame);
 
-    // Next piece of data in stream order. fin is true on the piece that ends the stream.
-    // Returns false if the next byte has not arrived yet.
+    // Pop next in-order data; fin=true on the final chunk. False if next byte is missing.
     bool pop(uint64_t &offset, vector<uint8_t> &data, bool &fin);
 
-    // Offset of the next byte that will be delivered
+    // Offset of next byte to deliver
     uint64_t get_read_offset() const;
 
-    // True once the whole stream (up to the FIN) was delivered
+    // True once all bytes up to FIN are delivered
     bool is_finished() const;
 
     uint64_t get_buffered_bytes() const;
@@ -39,14 +36,13 @@ private:
     uint32_t stream_id;
     StreamFrameSorter sorter;
 
-    // The FIN is remembered as an offset and not kept on a frame: a frame can be cut
-    // when it overlaps data we already have, and then it would not end the stream anymore
-    bool fin_known = false;
-    uint64_t fin_offset = 0;
-    bool fin_delivered = false;
+    // Track FIN as an offset because frames can get trimmed on overlap
+    bool fin_known=false;
+    uint64_t fin_offset=0;
+    bool fin_delivered=false;
 
-    // Largest offset + length of any frame accepted so far (the stream is at least this long)
-    uint64_t highest_end = 0;
+    // Highest offset + len accepted so far
+    uint64_t highest_end=0;
 };
 
 #endif

@@ -1,6 +1,6 @@
-#include <bits/stdc++.h>
-#include <unistd.h>
-#include <sys/epoll.h>
+#include<bits/stdc++.h>
+#include<unistd.h>
+#include<sys/epoll.h>
 
 #include "sockets/socket_manager.hpp"
 
@@ -8,113 +8,100 @@ using namespace std;
 
 SocketManager::SocketManager()
 {
-    epoll_fd = epoll_create1(0);
-    if (epoll_fd < 0)
-    {
-        cout << "Error: could not start the event loop that waits for packets (epoll_create1: "
-             << strerror(errno) << ")\n";
+    epoll_fd=epoll_create1(0);
+    if(epoll_fd<0){
+        cout<<"[ERROR] epoll_create1 failed: "<<strerror(errno)<<"\n";
     }
 }
 
 SocketManager::~SocketManager()
 {
     stop();
-    if (epoll_fd >= 0)
-    {
+    if(epoll_fd>=0){
         close(epoll_fd);
-        epoll_fd = -1;
+        epoll_fd=-1;
     }
 }
 
 bool SocketManager::add_socket(UDPSocket *sock)
 {
-    if (epoll_fd < 0 || sock == nullptr || !sock->isValid())
-    {
+    if(epoll_fd<0||sock==nullptr||!sock->isValid()){
         return false;
     }
 
     epoll_event event;
-    event.events = EPOLLIN;
-    event.data.fd = sock->get_fd();
+    event.events=EPOLLIN;
+    event.data.fd=sock->get_fd();
 
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock->get_fd(), &event) < 0)
-    {
-        cout << "Error: could not add a socket to the event loop, packets on it would not be read (epoll_ctl: "
-             << strerror(errno) << ")\n";
+    if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock->get_fd(), &event)<0){
+        cout<<"[ERROR] epoll_ctl add socket failed: "<<strerror(errno)<<"\n";
         return false;
     }
 
-    sockets[sock->get_fd()] = sock;
+    sockets[sock->get_fd()]=sock;
     return true;
 }
 
 void SocketManager::on_receive(RecvCallback cb)
 {
-    callback = cb;
+    callback=cb;
 }
 
 void SocketManager::on_tick(TickCallback cb)
 {
-    tick_callback = cb;
+    tick_callback=cb;
 }
 
 void SocketManager::run(int tick_ms)
 {
-    if (epoll_fd < 0)
+    if(epoll_fd<0)
         return;
 
-    running = true;
-    cout << "Event loop started: waiting for packets.\n";
+    running=true;
+    cout<<"[SOCKET] Event loop started\n";
 
     epoll_event events[16];
     uint8_t buffer[65536];
 
-    while (running)
-    {
-        int num_events = epoll_wait(epoll_fd, events, 16, tick_ms);
+    while(running){
+        int num_events=epoll_wait(epoll_fd, events, 16, tick_ms);
 
-        if (num_events < 0)
-        {
-            if (errno == EINTR)
+        if(num_events<0){
+            if(errno==EINTR)
                 continue;
-            cout << "Error: waiting for packets failed, the event loop stops (epoll_wait: "
-                 << strerror(errno) << ")\n";
+            cout<<"[ERROR] epoll_wait failed: "<<strerror(errno)<<"\n";
             break;
         }
 
-        for (int i = 0; i < num_events; i++)
-        {
-            int ready_fd = events[i].data.fd;
+        for(int i=0; i<num_events; i++){
+            int ready_fd=events[i].data.fd;
 
-            if (sockets.find(ready_fd) == sockets.end())
+            if(sockets.find(ready_fd)==sockets.end())
                 continue;
 
-            UDPSocket *sock = sockets[ready_fd];
+            UDPSocket *sock=sockets[ready_fd];
             string src_ip;
-            uint16_t src_port = 0;
+            uint16_t src_port=0;
 
-            while (true)
-            {
-                ssize_t received = sock->recvFrom(buffer, sizeof(buffer), src_ip, src_port);
-                if (received <= 0)
+            while(true){
+                ssize_t received=sock->recvFrom(buffer, sizeof(buffer), src_ip, src_port);
+                if(received<=0)
                     break;
-                if (callback != nullptr)
-                {
+                if(callback!=nullptr){
                     callback(ready_fd, buffer, (size_t)received, src_ip, src_port);
                 }
             }
         }
 
-        if (tick_callback != nullptr)
-        {
+        if(tick_callback!=nullptr){
             tick_callback();
         }
     }
 
-    cout << "Event loop stopped.\n";
+    cout<<"[SOCKET] Event loop stopped\n";
 }
 
 void SocketManager::stop()
 {
-    running = false;
+    running=false;
 }

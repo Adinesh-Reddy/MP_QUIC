@@ -1,14 +1,15 @@
 #ifndef SEND_STREAM_HPP
 #define SEND_STREAM_HPP
 
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 #include "packet/frame.hpp"
 
 using namespace std;
 
-// Sending side of one stream: keeps the bytes written by the application and
-// cuts them into STREAM frames. Every frame carries its byte offset in the stream,
-// which is what lets the receiver put back in order data that came over different paths.
+/*
+ Send side of one stream: buffers app bytes and splits them into STREAM frames.
+ Each frame carries its byte offset so the receiver can reorder frames across paths.
+*/
 class SendStream
 {
 public:
@@ -16,33 +17,33 @@ public:
 
     uint32_t get_stream_id() const;
 
-    // Appends application data to the stream
+    // Add bytes to stream buffer
     void write(const uint8_t *data, size_t length);
 
-    // No more data will be written: the last frame will carry the FIN bit
+    // Mark end of stream; last frame will set FIN=1
     void close();
 
-    // True if there is data (or a FIN) that was not put in a frame yet
+    // True if data or FIN is waiting to be framed
     bool has_data() const;
 
-    // Builds the next STREAM frame, not larger than max_frame_size bytes once serialized.
-    // send_window = bytes of new data the flow control still allows on this stream.
-    // Returns false if nothing can be sent (no room in the packet or no flow control credit).
-    bool pop_stream_frame(size_t max_frame_size, Frame &out_frame, uint64_t send_window = UINT64_MAX);
+    /*
+     Build next STREAM frame fitting within max_frame_size and send_window.
+     Returns false if packet space or flow control window is full.
+    */
+    bool pop_stream_frame(size_t max_frame_size, Frame &out_frame, uint64_t send_window=UINT64_MAX);
 
-    // Offset of the next byte that will be put in a frame
+    // Next byte offset to send
     uint64_t get_next_offset() const;
 
-    // Bytes written by the application that were not put in a frame yet.
-    // Lets an application write a large file piece by piece instead of all at once.
+    // Bytes written by app that are not framed yet (for chunked file writes)
     size_t get_unsent_bytes() const;
 
 private:
     uint32_t stream_id;
-    deque<uint8_t> buffer;      // bytes written by the application, not sent yet
-    uint64_t next_offset = 0;
-    bool closed = false;
-    bool fin_sent = false;
+    deque<uint8_t> buffer;      // unsent app bytes
+    uint64_t next_offset=0;
+    bool closed=false;
+    bool fin_sent=false;
 };
 
 #endif

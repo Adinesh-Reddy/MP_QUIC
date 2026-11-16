@@ -1,4 +1,4 @@
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 
 #include "reliability/rtt_stats.hpp"
 
@@ -6,39 +6,36 @@ using namespace std;
 
 void RttStats::update_rtt(uint64_t send_delta_us, uint64_t ack_delay_us)
 {
-    if (send_delta_us == 0)
-    {
-        return; // not a usable measurement
+    if(send_delta_us==0){
+        return; // invalid sample
     }
 
-    // rtt_floor uses the raw measurement, it is not corrected with the ack delay
-    if (rtt_floor == 0 || rtt_floor > send_delta_us)
-    {
-        rtt_floor = send_delta_us;
+    // min_rtt uses raw sample without subtracting ack_delay
+    if(rtt_floor==0||rtt_floor>send_delta_us){
+        rtt_floor=send_delta_us;
     }
 
-    // Remove the time the receiver held the packet, but only if the result stays positive
-    uint64_t sample = send_delta_us;
-    if (sample > ack_delay_us)
-    {
-        sample -= ack_delay_us;
+    // Subtract receiver ack_delay if result stays positive
+    uint64_t sample=send_delta_us;
+    if(sample>ack_delay_us){
+        sample-=ack_delay_us;
     }
-    recent_rtt = sample;
+    recent_rtt=sample;
 
-    if (srtt_us == 0)
-    {
+    if(srtt_us==0){
         // First sample
-        srtt_us = sample;
-        rttvar_us = sample / 2;
+        srtt_us=sample;
+        rttvar_us=sample/2;
     }
-    else
-    {
-        // rttvar_us = 3/4 * rttvar_us + 1/4 * |srtt_us - sample|
-        // srtt_us   = 7/8 * srtt_us   + 1/8 * sample
-        // (the deviation must be updated first, it uses the old srtt_us)
-        uint64_t diff = (srtt_us > sample) ? (srtt_us - sample) : (sample - srtt_us);
-        rttvar_us = (3 * rttvar_us + diff) / 4;
-        srtt_us = (7 * srtt_us + sample) / 8;
+    else{
+        /*
+         rttvar = 3/4 * rttvar + 1/4 * |srtt - sample|
+         srtt   = 7/8 * srtt   + 1/8 * sample
+         Update rttvar first using the old srtt.
+        */
+        uint64_t diff=(srtt_us>sample) ? (srtt_us-sample) : (sample-srtt_us);
+        rttvar_us=(3*rttvar_us+diff)/4;
+        srtt_us=(7*srtt_us+sample)/8;
     }
 }
 

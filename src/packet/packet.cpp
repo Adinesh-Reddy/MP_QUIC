@@ -1,6 +1,6 @@
-#include <bits/stdc++.h>
-#include <endian.h>
-#include <arpa/inet.h>
+#include<bits/stdc++.h>
+#include<endian.h>
+#include<arpa/inet.h>
 
 #include "packet/packet.hpp"
 
@@ -19,22 +19,22 @@ uint8_t Packet::get_flags() const
 
 void Packet::set_flags(uint8_t f)
 {
-    flags = f;
+    flags=f;
 }
 
 bool Packet::has_flag(uint8_t flag) const
 {
-    return (flags & flag) != 0;
+    return (flags&flag)!=0;
 }
 
 void Packet::set_flag(uint8_t flag)
 {
-    flags |= flag;
+    flags|=flag;
 }
 
 void Packet::clear_flag(uint8_t flag)
 {
-    flags &= ~flag;
+    flags&=~flag;
 }
 
 uint64_t Packet::get_connection_id() const
@@ -44,7 +44,7 @@ uint64_t Packet::get_connection_id() const
 
 void Packet::set_connection_id(uint64_t cid)
 {
-    connection_id = cid;
+    connection_id=cid;
 }
 
 uint8_t Packet::get_path_id() const
@@ -54,7 +54,7 @@ uint8_t Packet::get_path_id() const
 
 void Packet::set_path_id(uint8_t id)
 {
-    path_id = id;
+    path_id=id;
 }
 
 uint64_t Packet::get_packet_number() const
@@ -64,7 +64,7 @@ uint64_t Packet::get_packet_number() const
 
 void Packet::set_packet_number(uint64_t num)
 {
-    packet_number = num;
+    packet_number=num;
 }
 
 uint64_t Packet::get_packet_num() const
@@ -74,7 +74,7 @@ uint64_t Packet::get_packet_num() const
 
 void Packet::set_packet_num(uint64_t num)
 {
-    packet_number = num;
+    packet_number=num;
 }
 
 const vector<Frame> &Packet::get_frames() const
@@ -94,19 +94,17 @@ void Packet::clear_frames()
 
 size_t Packet::size() const
 {
-    size_t total_size = HEADER_SIZE;
-    for (const auto &frame : frames)
-    {
-        total_size += frame.size();
+    size_t total_size=HEADER_SIZE;
+    for(const auto &frame : frames){
+        total_size+=frame.size();
     }
     return total_size;
 }
 
 bool Packet::is_retransmittable() const
 {
-    for (const auto &frame : frames)
-    {
-        if (frame.is_retransmittable())
+    for(const auto &frame : frames){
+        if(frame.is_retransmittable())
             return true;
     }
     return false;
@@ -114,28 +112,26 @@ bool Packet::is_retransmittable() const
 
 vector<uint8_t> Packet::serialize() const
 {
-    size_t total_size = size();
-    if (total_size > MAX_PACKET_SIZE)
-    {
-        throw length_error("Packet is too big: " + to_string(total_size) + " bytes, the limit is " +
-                           to_string(MAX_PACKET_SIZE) + " bytes");
+    size_t total_size=size();
+    if(total_size>MAX_PACKET_SIZE){
+        throw length_error("Packet too big: "+to_string(total_size)+" bytes (max "+
+                           to_string(MAX_PACKET_SIZE)+")");
     }
 
     vector<uint8_t> buffer(HEADER_SIZE);
     buffer.reserve(total_size);
 
-    buffer[0] = flags;
+    buffer[0]=flags;
 
-    uint64_t cid = htobe64(connection_id);
-    memcpy(buffer.data() + 1, &cid, sizeof(cid));
+    uint64_t cid=htobe64(connection_id);
+    memcpy(buffer.data()+1, &cid, sizeof(cid));
 
-    buffer[9] = path_id;
+    buffer[9]=path_id;
 
-    uint64_t pnum = htobe64(packet_number);
-    memcpy(buffer.data() + 10, &pnum, sizeof(pnum));
+    uint64_t pnum=htobe64(packet_number);
+    memcpy(buffer.data()+10, &pnum, sizeof(pnum));
 
-    for (const auto &frame : frames)
-    {
+    for(const auto &frame : frames){
         frame.serialize(buffer);
     }
 
@@ -144,63 +140,58 @@ vector<uint8_t> Packet::serialize() const
 
 bool Packet::deserialize(const uint8_t *buffer, size_t length, Packet &out_packet)
 {
-    if (buffer == nullptr || length < HEADER_SIZE)
-    {
+    if(buffer==nullptr||length<HEADER_SIZE){
         return false;
     }
 
-    uint64_t raw_cid = 0;
-    memcpy(&raw_cid, buffer + 1, sizeof(raw_cid));
+    uint64_t raw_cid=0;
+    memcpy(&raw_cid, buffer+1, sizeof(raw_cid));
 
-    uint64_t raw_pnum = 0;
-    memcpy(&raw_pnum, buffer + 10, sizeof(raw_pnum));
+    uint64_t raw_pnum=0;
+    memcpy(&raw_pnum, buffer+10, sizeof(raw_pnum));
 
-    // Everything after the header is a sequence of frames
+    // Read frames after header
     vector<Frame> parsed_frames;
-    size_t pos = HEADER_SIZE;
-    while (pos < length)
-    {
+    size_t pos=HEADER_SIZE;
+    while(pos<length){
         Frame frame;
-        size_t consumed = 0;
-        if (!Frame::parse(buffer + pos, length - pos, consumed, frame))
-        {
+        size_t consumed=0;
+        if(!Frame::parse(buffer+pos, length-pos, consumed, frame)){
             return false;
         }
         parsed_frames.push_back(frame);
-        pos += consumed;
+        pos+=consumed;
     }
 
-    // A packet without any frame is not valid
-    if (parsed_frames.empty())
-    {
+    // Empty packet is invalid
+    if(parsed_frames.empty()){
         return false;
     }
 
-    out_packet.flags = buffer[0];
-    out_packet.connection_id = be64toh(raw_cid);
-    out_packet.path_id = buffer[9];
-    out_packet.packet_number = be64toh(raw_pnum);
-    out_packet.frames = parsed_frames;
+    out_packet.flags=buffer[0];
+    out_packet.connection_id=be64toh(raw_cid);
+    out_packet.path_id=buffer[9];
+    out_packet.packet_number=be64toh(raw_pnum);
+    out_packet.frames=parsed_frames;
 
     return true;
 }
 
 bool Packet::peek_header(const uint8_t *buffer, size_t length, uint64_t &connection_id, uint8_t &path_id)
 {
-    if (buffer == nullptr || length < HEADER_SIZE)
-    {
+    if(buffer==nullptr||length<HEADER_SIZE){
         return false;
     }
 
-    uint64_t raw_cid = 0;
-    memcpy(&raw_cid, buffer + 1, sizeof(raw_cid));
-    connection_id = be64toh(raw_cid);
-    path_id = buffer[9];
+    uint64_t raw_cid=0;
+    memcpy(&raw_cid, buffer+1, sizeof(raw_cid));
+    connection_id=be64toh(raw_cid);
+    path_id=buffer[9];
     return true;
 }
 
 uint64_t Packet::current_time_us()
 {
-    auto now = chrono::steady_clock::now().time_since_epoch();
+    auto now=chrono::steady_clock::now().time_since_epoch();
     return static_cast<uint64_t>(chrono::duration_cast<chrono::microseconds>(now).count());
 }

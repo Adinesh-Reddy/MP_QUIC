@@ -1,7 +1,7 @@
 #ifndef PATH_MANAGER_HPP
 #define PATH_MANAGER_HPP
 
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 #include "sockets/udp_socket.hpp"
 #include "packet/frame.hpp"
 #include "path/path.hpp"
@@ -9,44 +9,31 @@
 
 using namespace std;
 
-// Decides when the paths of one connection are created. It owns the Path objects and
-// registers them with the Connection.
-//
-// Client: the connection starts on the initial path (Path ID 0), from the first local
-// interface. When the server answers and advertises its addresses (ADD_ADDRESS frame), the
-// client opens one path from each of its other interfaces. Paths created by the client have
-// an odd Path ID (1, 3, ...). A PING is sent on a new path to tell the server it exists.
-//
-// Server: it creates nothing by itself. A path appears when the first packet with a new
-// Path ID arrives; the source address of that packet is the remote address of the path.
-// No handshake is needed on the new path, it can carry data at once.
+/*
+ Owns and creates paths for one connection.
+ Client: starts with path 0, then opens odd IDs (1, 3, ...) from other local sockets
+ when ADD_ADDRESS arrives (sends PING to announce each new path).
+ Server: creates paths when packets arrive with a new Path ID.
+*/
 class PathManager
 {
 public:
     PathManager(Connection *connection);
 
-    // ---- Client side ----
-
-    // A local interface (a socket bound to one of the addresses of the host).
-    // The order matters: the first one carries the initial path.
+    // Client side: add local socket/IP (first one is used for initial path 0)
     void add_local_socket(UDPSocket *socket, const string &local_ip);
 
-    // Opens the initial path (Path ID 0) from the first local interface
+    // Open initial path (Path ID 0) from first local interface
     Path *open_initial_path(const string &remote_ip, uint16_t remote_port);
 
-    // The server advertised its addresses: opens a path from every local interface that has
-    // none yet. Returns the number of paths opened.
-    //   - an advertised address that is not used by a path yet is taken, in the order given
-    //   - if none is left (the server has a single address) the path goes to the address
-    //     of the initial path
+    /*
+     Open paths from remaining local interfaces using peer addresses from ADD_ADDRESS.
+     Falls back to initial remote address if no unused peer address is left.
+     Returns count of new paths opened.
+    */
     size_t on_add_address(const vector<NetworkAddress> &addresses);
 
-    // ---- Server side ----
-
-    // A packet arrived for this connection. Returns the path it belongs to:
-    //   - a new Path ID: the path is created (only 0 and odd IDs, the ones a client may use)
-    //   - a known Path ID from a new source address: the remote address of the path is updated
-    // Returns nullptr if the Path ID is not acceptable.
+    // Server side: find path, create on new valid ID (0 or odd), or update NAT address
     Path *on_packet_received(uint8_t path_id, UDPSocket *socket, const string &local_ip,
                              const string &remote_ip, uint16_t remote_port);
 
@@ -69,8 +56,8 @@ private:
     vector<LocalInterface> local_interfaces;
     NetworkAddress initial_remote;
 
-    // Path ID of the next path created by the client: odd numbers
-    unsigned next_path_id = 1;
+    // Client path IDs are odd (1, 3, ...)
+    unsigned next_path_id=1;
 };
 
 #endif
