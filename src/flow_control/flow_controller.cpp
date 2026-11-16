@@ -21,7 +21,6 @@ FlowController::FlowController(uint32_t stream_id, bool contributes_to_connectio
 
     // Both sides start with the same window size
     send_limit=advertised_limit;
-    send_limit=advertised_limit;
 }
 
 bool FlowController::get_contributes_to_connection() const

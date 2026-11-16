@@ -7,35 +7,10 @@
 using namespace std;
 
 Packet::Packet()
-    : flags(FLAG_NONE), connection_id(0), path_id(0), packet_number(0) {}
+    : connection_id(0), path_id(0), packet_number(0) {}
 
-Packet::Packet(uint8_t flags, uint64_t connection_id, uint8_t path_id, uint64_t packet_number)
-    : flags(flags), connection_id(connection_id), path_id(path_id), packet_number(packet_number) {}
-
-uint8_t Packet::get_flags() const
-{
-    return flags;
-}
-
-void Packet::set_flags(uint8_t f)
-{
-    flags=f;
-}
-
-bool Packet::has_flag(uint8_t flag) const
-{
-    return (flags&flag)!=0;
-}
-
-void Packet::set_flag(uint8_t flag)
-{
-    flags|=flag;
-}
-
-void Packet::clear_flag(uint8_t flag)
-{
-    flags&=~flag;
-}
+Packet::Packet(uint64_t connection_id, uint8_t path_id, uint64_t packet_number)
+    : connection_id(connection_id), path_id(path_id), packet_number(packet_number) {}
 
 uint64_t Packet::get_connection_id() const
 {
@@ -121,15 +96,14 @@ vector<uint8_t> Packet::serialize() const
     vector<uint8_t> buffer(HEADER_SIZE);
     buffer.reserve(total_size);
 
-    buffer[0]=flags;
-
+    // Bytes 0-7: connection_id, byte 8: path_id, bytes 9-16: packet_number
     uint64_t cid=htobe64(connection_id);
-    memcpy(buffer.data()+1, &cid, sizeof(cid));
+    memcpy(buffer.data()+0, &cid, sizeof(cid));
 
-    buffer[9]=path_id;
+    buffer[8]=path_id;
 
     uint64_t pnum=htobe64(packet_number);
-    memcpy(buffer.data()+10, &pnum, sizeof(pnum));
+    memcpy(buffer.data()+9, &pnum, sizeof(pnum));
 
     for(const auto &frame : frames){
         frame.serialize(buffer);
@@ -145,10 +119,10 @@ bool Packet::deserialize(const uint8_t *buffer, size_t length, Packet &out_packe
     }
 
     uint64_t raw_cid=0;
-    memcpy(&raw_cid, buffer+1, sizeof(raw_cid));
+    memcpy(&raw_cid, buffer+0, sizeof(raw_cid));
 
     uint64_t raw_pnum=0;
-    memcpy(&raw_pnum, buffer+10, sizeof(raw_pnum));
+    memcpy(&raw_pnum, buffer+9, sizeof(raw_pnum));
 
     // Read frames after header
     vector<Frame> parsed_frames;
@@ -168,9 +142,8 @@ bool Packet::deserialize(const uint8_t *buffer, size_t length, Packet &out_packe
         return false;
     }
 
-    out_packet.flags=buffer[0];
     out_packet.connection_id=be64toh(raw_cid);
-    out_packet.path_id=buffer[9];
+    out_packet.path_id=buffer[8];
     out_packet.packet_number=be64toh(raw_pnum);
     out_packet.frames=parsed_frames;
 
@@ -184,9 +157,9 @@ bool Packet::peek_header(const uint8_t *buffer, size_t length, uint64_t &connect
     }
 
     uint64_t raw_cid=0;
-    memcpy(&raw_cid, buffer+1, sizeof(raw_cid));
+    memcpy(&raw_cid, buffer+0, sizeof(raw_cid));
     connection_id=be64toh(raw_cid);
-    path_id=buffer[9];
+    path_id=buffer[8];
     return true;
 }
 

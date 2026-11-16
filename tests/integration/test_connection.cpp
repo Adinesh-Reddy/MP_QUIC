@@ -414,14 +414,14 @@ static void test_invalid_packet_does_not_revive_path()
     assert(connection.add_path(&path));
     path.set_potentially_failed(true);
 
-    Packet invalid(FLAG_NONE, CONNECTION_ID, 0, 0);
+    Packet invalid(CONNECTION_ID, 0, 0);
     invalid.add_frame(Frame::make_ping());
     vector<uint8_t> raw=invalid.serialize();
     connection.handle_packet(raw.data(), raw.size());
     assert(path.is_potentially_failed());
     assert(path.get_last_network_activity_time()==0);
 
-    Packet valid(FLAG_NONE, CONNECTION_ID, 0, 1);
+    Packet valid(CONNECTION_ID, 0, 1);
     valid.add_frame(Frame::make_ping());
     raw=valid.serialize();
     connection.handle_packet(raw.data(), raw.size());

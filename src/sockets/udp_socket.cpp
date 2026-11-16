@@ -12,7 +12,8 @@ UDPSocket::UDPSocket()
 {
     fd=socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, 0);
     if(fd<0){
-        cout<<"[ERROR] Socket create failed: "<<strerror(errno)<<"\n";
+        int reason=errno; // save before cout can touch errno
+        cout<<"[ERROR] Socket create failed: "<<strerror(reason)<<"\n";
     }
 }
 
@@ -36,7 +37,8 @@ bool UDPSocket::bind(const string &ip, uint16_t port)
     }
 
     if(::bind(fd, (struct sockaddr *)&addr, sizeof(addr))<0){
-        cout<<"[ERROR] Cannot bind "<<ip<<":"<<port<<" ("<<strerror(errno)<<")\n";
+        int reason=errno; // save before cout can touch errno
+        cout<<"[ERROR] Cannot bind "<<ip<<":"<<port<<" ("<<strerror(reason)<<")\n";
         return false;
     }
 
@@ -60,7 +62,8 @@ ssize_t UDPSocket::sendTo(const uint8_t *data, size_t length, const string &dest
 
     ssize_t sent=sendto(fd, data, length, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if(sent<0){
-        cout<<"[ERROR] Send to "<<dest_ip<<":"<<dest_port<<" failed: "<<strerror(errno)<<"\n";
+        int reason=errno; // save before cout can touch errno
+        cout<<"[ERROR] Send to "<<dest_ip<<":"<<dest_port<<" failed: "<<strerror(reason)<<"\n";
     }
     return sent;
 }
@@ -116,7 +119,7 @@ bool UDPSocket::set_buffer_size(int bytes)
     getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &send_size, &length);
     if(receive_size/2<bytes||send_size/2<bytes){
         cout<<"[INFO] Port "<<get_local_port()<<" UDP buffer capped at "<<receive_size/2/1024<<"kB rx / "
-             <<send_size/2/1024<<"kB tx (asked "<<bytes/1024<<"kB)\n";
+             <<send_size/2/1024<<"kB tx (asked "<<bytes/1024<<"kB); raise net.core.rmem_max / wmem_max\n";
     }
     return ok;
 }

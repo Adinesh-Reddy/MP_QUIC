@@ -126,7 +126,7 @@ bool Path::on_rto(uint64_t last_sent_time_us)
     }
 
     looks_broken=true;
-    cout<<"[PATH] Path "<<(int)path_id<<" may be broken (no reply before RTO), resending on another path\n";
+    cout<<"[PATH] Path "<<(int)path_id<<" may be broken (no reply before RTO), resending its unacked packets (on another path if available)\n";
     return true;
 }
 

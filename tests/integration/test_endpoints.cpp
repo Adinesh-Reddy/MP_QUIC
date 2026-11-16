@@ -159,7 +159,7 @@ void test_multihomed_server()
     assert(server_close_reason=="the other side closed the connection (its reason: transfer complete)");
 
     // Late packet must not reopen closed connection
-    Packet late(FLAG_NONE, connection->get_connection_id(), 0, 999999);
+    Packet late(connection->get_connection_id(), 0, 999999);
     late.add_frame(Frame::make_ping());
     vector<uint8_t> raw=late.serialize();
     UDPSocket stray;

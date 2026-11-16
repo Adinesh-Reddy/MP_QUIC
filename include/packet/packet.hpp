@@ -8,17 +8,18 @@
 
 using namespace std;
 
-// Public header flags (DATA/ACK/WINDOW_UPDATE are frames inside the packet)
-const uint8_t FLAG_NONE=0x00;
-
 // Max UDP payload size (fits inside 1500-byte MTU with IP/UDP/tunnel headers)
 const size_t MAX_PACKET_SIZE=1350;
 
-// 18-byte public header; path_id selects the packet number space
+/*
+ 17-byte public header (big-endian):
+   connection_id (8, bytes 0-7) | path_id (1, byte 8) | packet_number (8, bytes 9-16)
+ path_id selects the packet number space. There is no flags byte: every field has a fixed
+ size and the Path ID is always present, so nothing needs to be signalled.
+*/
 #pragma pack(push, 1)
 struct PacketHeader
 {
-    uint8_t  flags;
     uint64_t connection_id;
     uint8_t  path_id;
     uint64_t packet_number;
@@ -30,17 +31,11 @@ using MPQUICHeader=PacketHeader;
 class Packet
 {
 public:
-    static constexpr size_t HEADER_SIZE=18;
+    static constexpr size_t HEADER_SIZE=17;
 
     Packet();
 
-    Packet(uint8_t flags, uint64_t connection_id, uint8_t path_id, uint64_t packet_number);
-
-    uint8_t get_flags() const;
-    void set_flags(uint8_t flags);
-    bool has_flag(uint8_t flag) const;
-    void set_flag(uint8_t flag);
-    void clear_flag(uint8_t flag);
+    Packet(uint64_t connection_id, uint8_t path_id, uint64_t packet_number);
 
     uint64_t get_connection_id() const;
     void set_connection_id(uint64_t cid);
@@ -72,11 +67,13 @@ public:
     static uint64_t current_time_us();
 
 private:
-    uint8_t  flags=FLAG_NONE;
     uint64_t connection_id=0;
     uint8_t  path_id=0;
     uint64_t packet_number=0;
     vector<Frame> frames;
 };
+
+// The packed struct documents the layout; both must stay the same size
+static_assert(sizeof(PacketHeader)==Packet::HEADER_SIZE, "PacketHeader and HEADER_SIZE disagree");
 
 #endif

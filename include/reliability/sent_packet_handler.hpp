@@ -11,13 +11,13 @@ using namespace std;
 // Loss recovery timing limits per path (microseconds)
 namespace LossRecovery
 {
-    // Max tracked packets in flight (2x max congestion window of 2500 packets)
+    // Max tracked packets: in flight + waiting to be resent (2x max congestion window of 2500)
     constexpr size_t MAX_TRACKED_PACKETS=5000;
 
     constexpr uint64_t INITIAL_RTO_US=500*1000;      // RTO before first RTT sample
     constexpr uint64_t MIN_RTO_US=200*1000;          // min RTO floor
     constexpr uint64_t MAX_RTO_US=60*1000*1000;    // max RTO cap
-    constexpr uint64_t MIN_TIMER_US=200*1000;        // min RTO alarm floor
+    constexpr uint64_t MIN_TIMER_US=200*1000;        // min RTO alarm floor; half of it pads the probe timer
     constexpr uint64_t MIN_PROBE_TIMEOUT_US=10*1000; // min probe timer
     constexpr uint32_t PROBES_BEFORE_RTO=2;            // tail loss probes before RTO
 }

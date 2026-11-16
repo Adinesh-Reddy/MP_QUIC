@@ -10,7 +10,8 @@ SocketManager::SocketManager()
 {
     epoll_fd=epoll_create1(0);
     if(epoll_fd<0){
-        cout<<"[ERROR] epoll_create1 failed: "<<strerror(errno)<<"\n";
+        int reason=errno; // save before cout can touch errno
+        cout<<"[ERROR] epoll_create1 failed: "<<strerror(reason)<<"\n";
     }
 }
 
@@ -34,7 +35,8 @@ bool SocketManager::add_socket(UDPSocket *sock)
     event.data.fd=sock->get_fd();
 
     if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock->get_fd(), &event)<0){
-        cout<<"[ERROR] epoll_ctl add socket failed: "<<strerror(errno)<<"\n";
+        int reason=errno; // save before cout can touch errno
+        cout<<"[ERROR] epoll_ctl add socket failed: "<<strerror(reason)<<"\n";
         return false;
     }
 
@@ -67,9 +69,10 @@ void SocketManager::run(int tick_ms)
         int num_events=epoll_wait(epoll_fd, events, 16, tick_ms);
 
         if(num_events<0){
-            if(errno==EINTR)
+            int reason=errno; // save before cout can touch errno
+            if(reason==EINTR)
                 continue;
-            cout<<"[ERROR] epoll_wait failed: "<<strerror(errno)<<"\n";
+            cout<<"[ERROR] epoll_wait failed: "<<strerror(reason)<<"\n";
             break;
         }
 

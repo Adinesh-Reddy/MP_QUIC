@@ -194,7 +194,7 @@ MP-QUIC Mini is organized as an event-driven, single-threaded reactor per endpoi
     \item \textbf{Flow-control replenishment:} \code{queue\_window\_updates(now\_us)} checks \code{FlowControlManager::get\_window\_updates()} and queues any due \code{WINDOW\_UPDATE} frames onto \emph{every} path's \code{control\_frames} queue.
     \item \textbf{Loss collection:} Inside the transmission loop, \code{collect\_retransmissions()} drains lost packets from every path's \code{SentPacketHandler}. Lost \code{STREAM} frames move to the connection-wide \code{retransmission\_queue}; lost \code{WINDOW\_UPDATE} frames (if still current), \code{PING}, and \code{ADD\_ADDRESS} frames are re-queued on their path; lost \code{PATHS} frames trigger a fresh \code{queue\_paths\_frame()}. If a path is \code{potentially\_failed} and suffered a loss, a single \code{PING} probe is queued on it.
     \item \textbf{Path selection:} \code{LowestRttScheduler::select\_path(paths, has\_retransmission)} selects the active path with the lowest \code{smoothed\_rtt} whose congestion window permits sending (or any non-failed path if retransmitting).
-    \item \textbf{Packet assembly \& serialization:} A \code{Packet} is created using \code{path->peek\_packet\_number()}. Frames are packed up to \code{MAX\_PACKET\_SIZE = 1350} bytes in strict priority order: (a) \code{ACK} frame for that path (\code{add\_ack\_frame}), (b) queued \code{control\_frames} for that path (\code{add\_control\_frames}), (c) lost \code{STREAM} frames from \code{retransmission\_queue} (\code{add\_retransmission\_frames}, splitting if needed), and (d) fresh \code{STREAM} frames from \code{send\_streams} bounded by \code{FlowControlManager::send\_window\_size()} (\code{add\_new\_stream\_frames}). \code{Packet::serialize()} emits the 18-byte big-endian header followed by serialized frames.
+    \item \textbf{Packet assembly \& serialization:} A \code{Packet} is created using \code{path->peek\_packet\_number()}. Frames are packed up to \code{MAX\_PACKET\_SIZE = 1350} bytes in strict priority order: (a) \code{ACK} frame for that path (\code{add\_ack\_frame}), (b) queued \code{control\_frames} for that path (\code{add\_control\_frames}), (c) lost \code{STREAM} frames from \code{retransmission\_queue} (\code{add\_retransmission\_frames}, splitting if needed), and (d) fresh \code{STREAM} frames from \code{send\_streams} bounded by \code{FlowControlManager::send\_window\_size()} (\code{add\_new\_stream\_frames}). \code{Packet::serialize()} emits the 17-byte big-endian header followed by serialized frames.
     \item \textbf{UDP dispatch \& tracking:} \code{send\_packet()} invokes \code{path->send()}, consumes the packet number via \code{path->pop\_packet\_number()}, and records the packet in \code{SentPacketHandler::sent\_packet()} (which updates \code{bytes\_in\_flight}, \code{OliaSender}, and the loss alarm). Note that even if \code{sendto()} fails, the packet is still recorded as sent so the protocol recovers identically to network loss.
     \item \textbf{Startup duplication:} If the packet carried stream data on a path whose \code{smoothed\_rtt == 0}, \code{send\_duplicate()} asks \code{select\_duplicate\_path()} for an alternate path and sends a copy with that alternate path's own packet number.
     \item \textbf{Pure ACK / control flush:} After the data loop terminates, \code{send\_acks\_and\_control\_frames()} flushes any remaining due ACKs or control frames on each path, bypassing congestion-window limits.
@@ -223,7 +223,7 @@ Table~\ref{tab:modules} summarizes every major class in the implementation, its 
 \midrule
 \code{UDPSocket} & Non-blocking IPv4 UDP socket wrapper; buffer sizing & \code{fd} & \code{SocketManager}, \code{Path}, \code{Client}, \code{Server} & \code{sockets/\hspace{0pt}udp\_socket.\{hpp,cpp\}} \\
 \code{SocketManager} & \code{epoll} event loop; dispatches datagrams \& periodic ticks & \code{epoll\_fd}, \code{sockets} map, callbacks & \code{UDPSocket}, \code{Client}, \code{Server} & \code{sockets/\hspace{0pt}socket\_manager.\{hpp,cpp\}} \\
-\code{Packet} & 18 B public header + frame list; serialize, deserialize, \code{peek\_header} & \code{flags}, \code{connection\_id}, \code{path\_id}, \code{packet\_number}, \code{frames} & \code{Frame}, \code{Connection}, \code{Server} & \code{packet/\hspace{0pt}packet.\{hpp,cpp\}} \\
+\code{Packet} & 17 B public header + frame list; serialize, deserialize, \code{peek\_header} & \code{connection\_id}, \code{path\_id}, \code{packet\_number}, \code{frames} & \code{Frame}, \code{Connection}, \code{Server} & \code{packet/\hspace{0pt}packet.\{hpp,cpp\}} \\
 \code{Frame} & Tagged union/struct for 7 frame types + ACK varint codec & \code{type} + typed frame payloads & \code{Packet}, \code{Connection}, handlers & \code{packet/\hspace{0pt}frame.\{hpp,cpp\}} \\
 \code{Path} & Encapsulates one network path and its per-path protocol state & Endpoints, \code{UDPSocket*}, \code{next\_packet\_number}, \code{potentially\_failed}, handlers & \code{Connection}, \code{PathManager}, \code{LowestRttScheduler} & \code{path/\hspace{0pt}path.\{hpp,cpp\}} \\
 \code{PathManager} & Client path creation via \code{ADD\_ADDRESS}; server passive path creation & \code{paths}, \code{local\_interfaces}, \code{next\_path\_id} & \code{Connection}, \code{Client}, \code{Server}, \code{Path} & \code{path/\hspace{0pt}path\_manager.\{hpp,cpp\}} \\
@@ -249,7 +249,7 @@ A single chunk of application data undergoes the following lifecycle from sender
 (1) Sender calls \code{Connection::write(stream\_id, buf, n)}, buffering bytes in \code{SendStream}.
 (2) \code{send\_pending()} queries \code{LowestRttScheduler::select\_path()}, which checks \code{Path::sending\_allowed()} (\code{bytes\_in\_flight <= cwnd} and tracked count $< 5000$) and \code{is\_potentially\_failed()}.
 (3) \code{SendStream::pop\_stream\_frame()} carves up to $\min(\text{remaining packet space} - 16, \text{send\_window\_size})$ bytes into a \code{STREAM} frame stamped with \code{next\_offset}, advancing \code{FlowControlManager::add\_bytes\_sent()}.
-(4) \code{Packet::serialize()} prepends the 18-byte public header with the chosen path's \code{path\_id} and \code{packet\_number}, sends it via \code{UDPSocket::sendTo()}, and stores the \code{SentPacket} in \code{packet\_history} (updating \code{bytes\_in\_flight} and arming TLP/RTO).
+(4) \code{Packet::serialize()} prepends the 17-byte public header with the chosen path's \code{path\_id} and \code{packet\_number}, sends it via \code{UDPSocket::sendTo()}, and stores the \code{SentPacket} in \code{packet\_history} (updating \code{bytes\_in\_flight} and arming TLP/RTO).
 (5) If the datagram is lost, either time-based loss detection ($>9/8\text{ RTT}$), TLP, or RTO moves the \code{STREAM} frame into \code{Connection::retransmission\_queue}, where it is repacked into a \emph{new} packet with a \emph{new} \code{packet\_number} (potentially on a different path) retaining the original stream \code{offset}.
 (6) At the receiver, \code{SocketManager} delivers the datagram to \code{Connection::handle\_packet()}, which deserializes it, logs the \code{packet\_number} in \code{ReceivedPacketHandler} (scheduling an ACK), checks flow control, inserts the bytes at \code{offset} in \code{StreamFrameSorter}, delivers contiguous bytes via \code{stream\_callback}, and advances \code{bytes\_read} to trigger future \code{WINDOW\_UPDATE}s.
 
@@ -257,22 +257,20 @@ A single chunk of application data undergoes the following lifecycle from sender
 \section{Packet Structure and Serialization}
 % ==============================================================================
 
-\subsection{18-Byte Public Header Format}
-Every UDP datagram emitted by MP-QUIC Mini begins with a fixed 18-byte public header defined by the packed struct \code{PacketHeader} (aliased as \code{MPQUICHeader}) in \code{include/packet/packet.hpp}. All multi-byte integers are serialized in network byte order (big-endian) via \code{htobe16}, \code{htobe32}, and \code{htobe64}. Figure~\ref{fig:hdr_layout} and Table~\ref{tab:pkt_header} detail every header field.
+\subsection{17-Byte Public Header Format}
+Every UDP datagram emitted by MP-QUIC Mini begins with a fixed 17-byte public header defined by the packed struct \code{PacketHeader} (aliased as \code{MPQUICHeader}) in \code{include/packet/packet.hpp}. All multi-byte integers are serialized in network byte order (big-endian) via \code{htobe16}, \code{htobe32}, and \code{htobe64}. Figure~\ref{fig:hdr_layout} and Table~\ref{tab:pkt_header} detail every header field.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[cell/.style={draw, rectangle, minimum height=0.72cm, align=center, font=\scriptsize}, node distance=0cm]
-    \node[cell, minimum width=1.8cm, fill=gray!12] (f) {\code{flags}\\(1 B)};
-    \node[cell, minimum width=5.2cm, right=of f, fill=blue!6] (cid) {\code{connection\_id}\\(8 B, big-endian)};
+    \node[cell, minimum width=5.2cm, fill=blue!6] (cid) {\code{connection\_id}\\(8 B, big-endian)};
     \node[cell, minimum width=2.0cm, right=of cid, fill=green!8] (pid) {\code{path\_id}\\(1 B)};
     \node[cell, minimum width=5.2cm, right=of pid, fill=orange!8] (pn) {\code{packet\_number}\\(8 B, big-endian)};
-    \node[below=0.08cm of f.south, font=\tiny] {Byte 0};
-    \node[below=0.08cm of cid.south, font=\tiny] {Bytes 1--8};
-    \node[below=0.08cm of pid.south, font=\tiny] {Byte 9};
-    \node[below=0.08cm of pn.south, font=\tiny] {Bytes 10--17};
+    \node[below=0.08cm of cid.south, font=\tiny] {Bytes 0--7};
+    \node[below=0.08cm of pid.south, font=\tiny] {Byte 8};
+    \node[below=0.08cm of pn.south, font=\tiny] {Bytes 9--16};
 \end{tikzpicture}
-\caption{Exact 18-byte binary layout of \code{PacketHeader}.}
+\caption{Exact 17-byte binary layout of \code{PacketHeader}.}
 \label{fig:hdr_layout}
 \end{figure}
 
@@ -283,10 +281,9 @@ Every UDP datagram emitted by MP-QUIC Mini begins with a fixed 18-byte public he
 \toprule
 \textbf{Field Name} & \textbf{Size (B)} & \textbf{Offset} & \textbf{Role} & \textbf{Purpose} & \textbf{Meaning \& Implementation Notes} \\
 \midrule
-\code{flags} & 1 & 0 & Transmission & Reserved header flag bits & Currently always \code{FLAG\_NONE} (\code{0x00}); helper methods exist, unused in protocol logic. \\
-\code{connection\_id} & 8 & 1 & Transmission & Logical session identifier & Big-endian \code{uint64\_t}. Random 64-bit value on \code{Client}; used by \code{Server::peek\_header()} to route datagrams. \\
-\code{path\_id} & 1 & 9 & Transmission / Reliability & Identifies path and PN space & \code{0} for initial path; odd IDs (\code{1, 3, ...}) for client-opened secondary paths. \\
-\code{packet\_number} & 8 & 10 & Reliability / ACK & Per-path transmission sequence & Big-endian \code{uint64\_t}, starting at \code{1} per path, strictly monotonic. Never \code{0}. \\
+\code{connection\_id} & 8 & 0 & Transmission & Logical session identifier & Big-endian \code{uint64\_t}. Random 64-bit value on \code{Client}; used by \code{Server::peek\_header()} to route datagrams. \\
+\code{path\_id} & 1 & 8 & Transmission / Reliability & Identifies path and PN space & \code{0} for initial path; odd IDs (\code{1, 3, ...}) for client-opened secondary paths. \\
+\code{packet\_number} & 8 & 9 & Reliability / ACK & Per-path transmission sequence & Big-endian \code{uint64\_t}, starting at \code{1} per path, strictly monotonic. Never \code{0}. \\
 \bottomrule
 \end{tabularx}
 \caption{Packet header field specification verified against \code{include/packet/packet.hpp} and \code{src/packet/packet.cpp}.}
@@ -294,7 +291,7 @@ Every UDP datagram emitted by MP-QUIC Mini begins with a fixed 18-byte public he
 \end{table}
 
 \subsection{Frame Formats and Complete Field Breakdown}
-Immediately following byte 17, a packet carries one or more self-delimiting frames (\code{Packet::deserialize()} rejects packets with zero frames). Table~\ref{tab:frame_fields} lists every field of all seven implemented frame types.
+Starting at byte 17, right after the header, a packet carries one or more self-delimiting frames (\code{Packet::deserialize()} rejects packets with zero frames). Table~\ref{tab:frame_fields} lists every field of all seven implemented frame types.
 
 \begin{table}[H]
 \centering
@@ -308,7 +305,7 @@ Immediately following byte 17, a packet carries one or more self-delimiting fram
  & \code{offset} & 8 & 5 & Reliability & Big-endian \code{uint64\_t} byte offset within stream. \\
  & \code{fin} & 1 & 13 & Reliability & \code{0} or \code{1}; \code{1} marks end-of-stream at \code{offset + length}. \\
  & \code{length} & 2 & 14 & Transmission & Big-endian \code{uint16\_t} payload length (\code{0} valid only if \code{fin == 1}). \\
- & \code{data} & $L$ & 16 & Payload & Application stream bytes ($0 \le L \le 1316$ in standard packets). \\
+ & \code{data} & $L$ & 16 & Payload & Application stream bytes ($0 \le L \le 1317$ in standard packets). \\
 \midrule
 \code{ACK} (\code{0x02}) & \code{type} & 1 & 0 & Acknowledgement & Identifies \code{FRAME\_ACK} (\code{0x02}); \emph{not} retransmittable. \\
 (Header: 16 B + & \code{path\_id} & 1 & 1 & Acknowledgement & Path whose packet-number space is being acknowledged. \\
@@ -342,7 +339,7 @@ varint ranges) & \code{largest\_acked} & 8 & 2 & Ack / RTT & Highest packet numb
 
 \subsection{Packet Size Limits, Varint Encoding, and Validation}
 \begin{itemize}
-    \item \textbf{Maximum packet size:} \code{MAX\_PACKET\_SIZE = 1350} bytes (\code{packet.hpp:16}). \code{Packet::serialize()} throws \code{std::length\_error} if \code{size() > 1350}.
+    \item \textbf{Maximum packet size:} \code{MAX\_PACKET\_SIZE = 1350} bytes (\code{packet.hpp:12}). \code{Packet::serialize()} throws \code{std::length\_error} if \code{size() > 1350}.
     \item \textbf{Variable-length integers (varints):} Used exclusively for ACK range lengths and gaps (\code{src/\hspace{0pt}packet/\hspace{0pt}frame.cpp:78-129}). The two most-significant bits of the first byte encode byte length $L = 2^{\text{prefix}}$: \code{00} $\rightarrow$ 1 B ($< 2^6$), \code{01} $\rightarrow$ 2 B ($< 2^{14}$), \code{10} $\rightarrow$ 4 B ($< 2^{30}$), \code{11} $\rightarrow$ 8 B ($< 2^{62}$). Thus 256 worst-case disjoint 1-packet ranges with small gaps require $16 + 1 + 255 \times 2 = 527$ bytes, fitting easily inside 1350 bytes.
     \item \textbf{Deserialization and validation:} \code{Packet::deserialize()} enforces: (a) \code{length >= 18}; (b) at least one valid frame; (c) exact buffer bounds for every field; (d) \code{STREAM} rejects \code{fin > 1} or \code{data\_len == 0 \&\& fin == 0}; (e) \code{ACK} rejects \code{num\_ranges == 0 || num\_ranges > 256}, ranges reaching packet number 0 (\code{first\_length >= largest\_acked} or \code{above\_first < gap + 2} or \code{range\_length >= r.last}), or \code{gap == 0}; (f) \code{PATHS} and \code{ADD\_ADDRESS} reject count $0$; (g) \code{CONNECTION\_CLOSE} rejects \code{reason\_length > 200}; (h) trailing unparsed bytes or unknown frame types fail parsing.
 \end{itemize}
@@ -353,7 +350,7 @@ A foundational principle of QUIC and MP-QUIC Mini is separating \emph{transmissi
     \item \textbf{Packet Number:} Identifies a specific UDP transmission on a specific \code{path\_id}. It is strictly increasing per path ($1, 2, 3, \dots$) and is \emph{never} reused, even for retransmissions. This eliminates the TCP retransmission ambiguity problem: the sender always knows whether an ACK came from the original transmission or a retransmission, ensuring clean RTT samples.
     \item \textbf{Data Offset:} Identifies the logical byte position inside a \code{SendStream}/\code{ReceiveStream} (starting at $0$). It depends only on the stream data, never on which packet or path carries it.
 \end{itemize}
-\textbf{Worked Retransmission Example:} Suppose Path 0 sends Packet Number \code{5} carrying \code{STREAM(stream\_id=1, offset=2632, length=1316)}. Packet 5 is lost. When \code{SentPacketHandler} detects the loss, it places the \code{STREAM} frame into \code{Connection::retransmission\_queue}. Suppose Path 0 is now marked potentially failed, so \code{LowestRttScheduler} selects Path 1 (whose next packet number is \code{12}), and Path 1 already needs to include a 20-byte \code{ACK} frame. Then \code{add\_retransmission\_frames()} calculates remaining space $1350 - 18 - 20 = 1312$ bytes, leaving $1312 - 16 = 1296$ bytes for stream data. It transmits Packet Number \code{12} on Path 1 containing \code{STREAM(stream\_id=1, offset=2632, fin=0, length=1296)}, and leaves the remaining 20 bytes at \code{offset=3928} in \code{retransmission\_queue} for the next packet (e.g., Path 1 Packet Number \code{13}). At the receiver, \code{StreamFrameSorter} reassembles both slices seamlessly at bytes \code{[2632, 3948)}.
+\textbf{Worked Retransmission Example:} Suppose Path 0 sends Packet Number \code{5} carrying \code{STREAM(stream\_id=1, offset=2634, length=1317)}. Packet 5 is lost. When \code{SentPacketHandler} detects the loss, it places the \code{STREAM} frame into \code{Connection::retransmission\_queue}. Suppose Path 0 is now marked potentially failed, so \code{LowestRttScheduler} selects Path 1 (whose next packet number is \code{12}), and Path 1 already needs to include a 20-byte \code{ACK} frame. Then \code{add\_retransmission\_frames()} calculates remaining space $1350 - 17 - 20 = 1313$ bytes, leaving $1313 - 16 = 1297$ bytes for stream data. It transmits Packet Number \code{12} on Path 1 containing \code{STREAM(stream\_id=1, offset=2634, fin=0, length=1297)}, and leaves the remaining 20 bytes at \code{offset=3931} in \code{retransmission\_queue} for the next packet (e.g., Path 1 Packet Number \code{13}). At the receiver, \code{StreamFrameSorter} reassembles both slices seamlessly at bytes \code{[2634, 3951)}.
 
 % ==============================================================================
 \section{MTU, MSS, and Packet Sizing}
@@ -369,7 +366,7 @@ In an IPv4 Ethernet network, the link-layer Maximum Transmission Unit (MTU) boun
     \begin{equation}
         \text{UDP Payload Capacity} = \text{IP MTU} - \text{IPv4 Header} - \text{UDP Header} = 1500 - 20 - 8 = 1472\text{ bytes}
     \end{equation}
-    \item \textbf{TCP MSS vs.\ MP-QUIC Mini Application Payload Capacity:} Standard TCP over IPv4/Ethernet has a Maximum Segment Size of $\text{MSS} = 1500 - 20 - 20 = 1460\text{ bytes}$. In MP-QUIC Mini, each UDP datagram is further capped at \code{MAX\_PACKET\_SIZE = 1350} bytes, with an 18-byte public header and at least a 16-byte \code{STREAM} frame header:
+    \item \textbf{TCP MSS vs.\ MP-QUIC Mini Application Payload Capacity:} Standard TCP over IPv4/Ethernet has a Maximum Segment Size of $\text{MSS} = 1500 - 20 - 20 = 1460\text{ bytes}$. In MP-QUIC Mini, each UDP datagram is further capped at \code{MAX\_PACKET\_SIZE = 1350} bytes, with a 17-byte public header and at least a 16-byte \code{STREAM} frame header:
     \begin{equation}
         \text{Max App Payload} = \text{MAX\_PACKET\_SIZE} - \text{HEADER\_SIZE} - \text{STREAM\_FRAME\_HEADER\_SIZE}
     \end{equation}
@@ -380,10 +377,10 @@ Using the exact constants in \code{include/packet/packet.hpp} and \code{include/
 \begin{align*}
     \text{Max UDP Datagram Payload Sent} &= \text{MAX\_PACKET\_SIZE} = 1350\text{ bytes} \\
     \text{Total IPv4 Packet Size on Wire} &= 1350 + 8\text{ (UDP)} + 20\text{ (IPv4)} = 1378\text{ bytes} < 1500\text{ bytes} \\
-    \text{Available Frame Space} &= 1350 - 18\text{ (\code{PacketHeader})} = 1332\text{ bytes} \\
-    \text{Max Application Data (single \code{STREAM} frame)} &= 1332 - 16\text{ (\code{STREAM} header)} = 1316\text{ bytes}
+    \text{Available Frame Space} &= 1350 - 17\text{ (\code{PacketHeader})} = 1333\text{ bytes} \\
+    \text{Max Application Data (single \code{STREAM} frame)} &= 1333 - 16\text{ (\code{STREAM} header)} = 1317\text{ bytes}
 \end{align*}
-Thus, with no piggybacked ACK or control frames, every full data packet carries $1316$ application bytes, yielding a framing efficiency of $1316 / 1378 \approx 95.5\%$ over IPv4. The $122$-byte margin below the $1472$-byte Ethernet UDP capacity ensures zero IP fragmentation even if a link carries VLAN, PPPoE, or VPN tunneling overhead.
+Thus, with no piggybacked ACK or control frames, every full data packet carries $1317$ application bytes, yielding a framing efficiency of $1317 / 1378 \approx 95.6\%$ over IPv4. The $122$-byte margin below the $1472$-byte Ethernet UDP capacity ensures zero IP fragmentation even if a link carries VLAN, PPPoE, or VPN tunneling overhead.
 
 \subsection{Distinction Between Configured Sizes and Congestion MSS}
 A subtle implementation detail exists in \code{include/congestion\_control/congestion.hpp:9}:
@@ -400,7 +397,7 @@ MP-QUIC Mini does \textbf{not} implement Path MTU Discovery (PMTUD / DPLPMTUD), 
 % ==============================================================================
 
 \subsection{Logical Connections Over Connectionless UDP}
-Although UDP maintains no connection state in the kernel, MP-QUIC Mini establishes stateful logical sessions in user space keyed by a 64-bit \code{connection\_id}. Every packet carries \code{connection\_id} at bytes 1--8. A \code{Client} generates a random 64-bit ID via \code{std::random\_device} (or accepts an explicit ID for tests). A \code{Server} maintains a map \code{std::map<uint64\_t, ServerConnection>} mapping each active \code{connection\_id} to its \code{Connection} and \code{PathManager}, independent of source IP/port changes.
+Although UDP maintains no connection state in the kernel, MP-QUIC Mini establishes stateful logical sessions in user space keyed by a 64-bit \code{connection\_id}. Every packet carries \code{connection\_id} at bytes 0--7. A \code{Client} generates a random 64-bit ID via \code{std::random\_device} (or accepts an explicit ID for tests). A \code{Server} maintains a map \code{std::map<uint64\_t, ServerConnection>} mapping each active \code{connection\_id} to its \code{Connection} and \code{PathManager}, independent of source IP/port changes.
 
 \subsection{Connection Creation, Implicit Setup, and Multi-Path Binding}
 There is \textbf{no cryptographic or 3-way handshake}:
@@ -804,7 +801,7 @@ The codebase follows a 12-phase incremental architecture documented in \code{REA
 \midrule
 1 & Non-blocking UDP I/O \& multiplexing without busy-wait & \code{UDPSocket}, \code{SocketManager} (\code{sockets/*}) & \code{SOCK\_NONBLOCK}, \code{epoll\_wait(tick\_ms=10/1)}, 4~MiB buffers & \code{test\_packet\_socket} & Implemented \\
 2 & Per-interface path state & \code{Path} (\code{path/path.*}) & Pairs endpoints + \code{UDPSocket*}; monotonic PN space ($\ge 1$) & \code{test\_endpoints} & Implemented \\
-3 & Binary wire format & \code{Packet}, \code{Frame} (\code{packet/*}) & 18 B header + 7 frame types; \code{MAX\_PACKET\_SIZE=1350}; varint ACKs & \code{test\_packet} (11 checks) & Implemented \\
+3 & Binary wire format & \code{Packet}, \code{Frame} (\code{packet/*}) & 17 B header + 7 frame types; \code{MAX\_PACKET\_SIZE=1350}; varint ACKs & \code{test\_packet} (10 checks) & Implemented \\
 4--5 & Stream slicing, RTT \& reliable ACKs & \code{SendStream}, \code{RttStats}, \code{Sent/\hspace{0pt}ReceivedPacketHandler}, \code{Connection} & 16 B \code{STREAM} hdr; 256-range ACKs; 25~ms delayed ACK; EWMA RTT & \code{test\_reliability} (7 checks) & Implemented \\
 6--7 & Reassembly, loss recovery, flow control & \code{StreamFrameSorter}, \code{ReceiveStream}, \code{FlowController/Manager} & Overlap trimming; $9/8\text{ RTT}$ loss, 2 TLPs, RTO ($0.2$--$60\text{ s}$); $32\text{ K}/48\text{ K}\to 16\text{ M}/24\text{ M}$ FC & \code{test\_loss\_recovery} (10 checks) & Implemented \\
 8 & Multipath scheduling & \code{Scheduler}, \code{LowestRttScheduler} (\code{scheduler/*}) & Lowest-SRTT path selection; startup duplication; \code{PATHS} + \code{PING} probes & \code{test\_scheduler} (6 checks) & Implemented \\
@@ -817,7 +814,7 @@ The codebase follows a 12-phase incremental architecture documented in \code{REA
 \label{tab:phases}
 \end{table}
 
-\textbf{Phase Progression:} Phase~1 establishes raw packet transport; Phase~2 binds sockets to paths; Phase~3 defines the 18-byte container and self-delimiting frames; Phases~4--5 build stream segmentation, per-path packet tracking, SACK generation, and EWMA RTT estimation; Phases~6--7 close the reliability loop with out-of-order reassembly, three-tier loss detection, and dual-level flow control; Phase~8 adds Lowest-RTT scheduling and startup duplication; Phases~9--10 couple path congestion windows via HyStart and OLIA; Phase~11 wraps everything in \code{Client}/\code{Server}/\code{PathManager} and user-facing file/RPC binaries; and Phase~12 provides the multi-VM benchmarking harness.
+\textbf{Phase Progression:} Phase~1 establishes raw packet transport; Phase~2 binds sockets to paths; Phase~3 defines the 17-byte container and self-delimiting frames; Phases~4--5 build stream segmentation, per-path packet tracking, SACK generation, and EWMA RTT estimation; Phases~6--7 close the reliability loop with out-of-order reassembly, three-tier loss detection, and dual-level flow control; Phase~8 adds Lowest-RTT scheduling and startup duplication; Phases~9--10 couple path congestion windows via HyStart and OLIA; Phase~11 wraps everything in \code{Client}/\code{Server}/\code{PathManager} and user-facing file/RPC binaries; and Phase~12 provides the multi-VM benchmarking harness.
 
 % ==============================================================================
 \section{VM Deployment and Network Topology}
@@ -893,7 +890,7 @@ On Client, \code{10.0.2.0/24} routes via \code{10.0.0.254} on \code{IF\_A}, and 
 
 \subsection{Metrics, Throughput vs.\ Goodput, and Integrity Verification}
 \begin{itemize}
-    \item \textbf{Throughput vs.\ Goodput:} \emph{Throughput} measures all bytes crossing the link interface (including 18 B MP-QUIC headers, 16 B frame headers, ACKs, \code{WINDOW\_UPDATE}s, startup duplicates, and retransmissions), captured per-interface via kernel \code{/sys/class/net/<IF>/statistics/rx\_bytes} (\code{rx\_a\_bytes}, \code{rx\_b\_bytes}). \emph{Goodput} measures only useful application payload delivered in order to the client, computed in \code{mpq\_client.cpp:200} as $\text{goodput\_kbps} = \frac{\text{received\_bytes} \times 8}{\text{time\_ms}}$, where \code{time\_ms} spans from first request write to receipt of the stream \code{FIN}.
+    \item \textbf{Throughput vs.\ Goodput:} \emph{Throughput} measures all bytes crossing the link interface (including 17 B MP-QUIC headers, 16 B frame headers, ACKs, \code{WINDOW\_UPDATE}s, startup duplicates, and retransmissions), captured per-interface via kernel \code{/sys/class/net/<IF>/statistics/rx\_bytes} (\code{rx\_a\_bytes}, \code{rx\_b\_bytes}). \emph{Goodput} measures only useful application payload delivered in order to the client, computed in \code{mpq\_client.cpp:200} as $\text{goodput\_kbps} = \frac{\text{received\_bytes} \times 8}{\text{time\_ms}}$, where \code{time\_ms} spans from first request write to receipt of the stream \code{FIN}.
     \item \textbf{Packet Loss, Retransmissions, RTT:} Reported per path by \code{print\_path\_statistics()} and sampled every $100\text{ ms}$ into CSV when \code{--stats FILE} is passed (\code{StatsWriter}: \code{time\_ms}, \code{path\_id}, \code{packets\_sent}, \code{packets\_lost}, \code{packets\_retransmitted}, \code{packets\_received}, \code{cwnd\_packets}, \code{ssthresh\_packets}, \code{slow\_start}, \code{srtt\_us}, \code{bytes\_in\_flight}, \code{potentially\_failed}, \code{bytes\_transferred}).
     \item \textbf{Handover Recovery Time:} Measured per-request by \code{mpq\_reqres} (default 35 requests of 750~B every 400~ms) in \code{delay\_ms} from request write to response \code{FIN}.
     \item \textbf{CPU Utilization:} Not instrumented by the repository's benchmark scripts (can be measured externally using \code{/usr/bin/time -v} or \code{pidstat}).
@@ -967,9 +964,9 @@ Table~\ref{tab:params} consolidates all protocol, socket, congestion, flow-contr
 \midrule
 \endhead
 \code{HEADER\_SIZE} & 18 & B & \code{packet.hpp:35} & Hardcoded & Fixed public header size; changing alters wire compatibility. \\
-\code{MAX\_PACKET\_SIZE} & 1350 & B & \code{packet.hpp:16} & Hardcoded & Max UDP payload; raising near 1472 risks IP fragmentation over tunnels. \\
+\code{MAX\_PACKET\_SIZE} & 1350 & B & \code{packet.hpp:12} & Hardcoded & Max UDP payload; raising near 1472 risks IP fragmentation over tunnels. \\
 IP/UDP MTU & 1500 (unspec.) & B & Not in code & OS/Link & Relies on standard 1500 B Ethernet MTU; no PMTUD implemented. \\
-Max STREAM payload & 1316 & B & \code{packet.hpp}, \code{frame.hpp} & Derived & $1350 - 18 - 16$; max single-frame app payload per packet. \\
+Max STREAM payload & 1317 & B & \code{packet.hpp}, \code{frame.hpp} & Derived & $1350 - 17 - 16$; max single-frame app payload per packet. \\
 \code{SOCKET\_BUFFER\_SIZE} & 4,194,304 & B & \code{client.cpp:8}, \code{server.cpp:8} & Hardcoded & \code{SO\_RCVBUF}/\code{SO\_SNDBUF} request; prevents burst drops. \\
 Number of paths & Dynamic ($\le 128$ client) & paths & \code{path\_manager.hpp:73} & Runtime CLI & Path 0 + odd IDs $1..255$ from \code{--local} args; 1 byte \code{path\_id}. \\
 \code{INITIAL\_CONGESTION\_WINDOW} & 32 & pkts & \code{congestion.hpp:10} & Constructor arg & Initial \code{cwnd} per path; higher speeds start-up but risks burst loss. \\
@@ -1008,8 +1005,8 @@ Scheduler & \code{lowest-rtt} & -- & \code{connection.hpp:156} & API setter & On
 
 \subsection{Implementation Status Classification}
 \begin{itemize}
-    \item \textbf{Fully Implemented:} Non-blocking UDP + \code{epoll} reactor; 18-byte public header and 7 self-delimiting frame formats (with 256-range varint ACK codec); per-path packet number spaces, EWMA RTT estimation, time-based loss detection, TLPs, and exponential RTO; out-of-order stream reassembly with overlap trimming; dual-level auto-tuning flow control; Lowest-RTT scheduler with startup duplication, path-failure detection, \code{PATHS} signaling, and \code{PING} recovery; HyStart and 128-bit coupled OLIA congestion control; dynamic \code{PathManager} with NAT rebinding; \code{mpq\_server}, \code{mpq\_client}, \code{mpq\_reqres}, and SHA-256 verification.
-    \item \textbf{Partially Implemented:} \code{PacketHeader::flags} is serialized/deserialized but unused (\code{FLAG\_NONE}); \code{PATHS} frame transmits per-path SRTTs, but receivers only process the \code{PATHS\_RTT\_POTENTIALLY\_FAILED} sentinel; \code{Scheduler} interface exists for pluggable policies, but only \code{LowestRttScheduler} is implemented; Phase~12 evaluation scripts are complete, but real VM benchmark runs have not been executed/logged.
+    \item \textbf{Fully Implemented:} Non-blocking UDP + \code{epoll} reactor; 17-byte public header and 7 self-delimiting frame formats (with 256-range varint ACK codec); per-path packet number spaces, EWMA RTT estimation, time-based loss detection, TLPs, and exponential RTO; out-of-order stream reassembly with overlap trimming; dual-level auto-tuning flow control; Lowest-RTT scheduler with startup duplication, path-failure detection, \code{PATHS} signaling, and \code{PING} recovery; HyStart and 128-bit coupled OLIA congestion control; dynamic \code{PathManager} with NAT rebinding; \code{mpq\_server}, \code{mpq\_client}, \code{mpq\_reqres}, and SHA-256 verification.
+    \item \textbf{Partially Implemented:} \code{PATHS} frame transmits per-path SRTTs, but receivers only process the \code{PATHS\_RTT\_POTENTIALLY\_FAILED} sentinel; \code{Scheduler} interface exists for pluggable policies, but only \code{LowestRttScheduler} is implemented; Phase~12 evaluation scripts are complete, but real VM benchmark runs have not been executed/logged.
     \item \textbf{Not Implemented:} TLS 1.3 handshake, payload encryption, and packet-number protection; Path MTU Discovery; \code{CLOSE\_PATH} (\code{0x11}) frame; \code{BLOCKED}/\code{STREAM\_BLOCKED} and \code{MAX\_STREAMS} frames; packet pacing; Round-Robin/BLEST/ECF schedulers; packet-threshold loss detection; maximum retransmission cap; multi-threading; IPv6 support (\code{AF\_INET} only).
 \end{itemize}
 
@@ -1027,6 +1024,6 @@ Key next steps include: (1) executing Phase~12 benchmarks across the 4-VM testbe
 \section{Conclusion}
 % ==============================================================================
 
-MP-QUIC Mini demonstrates a clean, modular, and verifiable user-space multipath transport protocol built in C++17 over Linux non-blocking UDP sockets and \code{epoll}. By pairing an 18-byte public header with 7 self-delimiting frame types and independent per-path packet number spaces, the implementation cleanly separates transmission tracking from stream-offset ordering. Time-based loss detection ($\frac{9}{8}\text{RTT}$), Tail Loss Probes, and RTO with path-failure signaling prevent cross-path reordering from crippling throughput and allow lost frames to be retransmitted across surviving paths. Coupled 128-bit OLIA congestion control with Hybrid Slow-Start maintains fairness with single-path flows while shifting window capacity to higher-quality paths, and dual-level auto-tuning flow control protects receiver memory across multiple concurrent streams. Together with \code{PathManager}, \code{mpq\_server}, \code{mpq\_client}, \code{mpq\_reqres}, and a passing 10-suite unit and loopback integration harness, the project establishes a solid, inspectable foundation for multi-VM multipath performance evaluation.
+MP-QUIC Mini demonstrates a clean, modular, and verifiable user-space multipath transport protocol built in C++17 over Linux non-blocking UDP sockets and \code{epoll}. By pairing a 17-byte public header with 7 self-delimiting frame types and independent per-path packet number spaces, the implementation cleanly separates transmission tracking from stream-offset ordering. Time-based loss detection ($\frac{9}{8}\text{RTT}$), Tail Loss Probes, and RTO with path-failure signaling prevent cross-path reordering from crippling throughput and allow lost frames to be retransmitted across surviving paths. Coupled 128-bit OLIA congestion control with Hybrid Slow-Start maintains fairness with single-path flows while shifting window capacity to higher-quality paths, and dual-level auto-tuning flow control protects receiver memory across multiple concurrent streams. Together with \code{PathManager}, \code{mpq\_server}, \code{mpq\_client}, \code{mpq\_reqres}, and a passing 10-suite unit and loopback integration harness, the project establishes a solid, inspectable foundation for multi-VM multipath performance evaluation.
 
 \end{document}
