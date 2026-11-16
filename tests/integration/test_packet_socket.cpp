@@ -60,7 +60,7 @@ int main()
 
     string message="End-to-end packet transmission test";
     vector<uint8_t> payload(message.begin(), message.end());
-    Packet send_pkt(FLAG_NONE, 1001, 1, 42);
+    Packet send_pkt(1001, 1, 42);
     send_pkt.add_frame(Frame::make_stream(1, 0, false, payload));
 
     vector<uint8_t> serialized=send_pkt.serialize();

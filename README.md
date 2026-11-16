@@ -7,7 +7,7 @@
   * Bundles individual network interfaces (e.g. Path 0 = Wi-Fi, Path 1 = Ethernet) with their local and remote IP addresses.
 
 - [x] **Phase 3: Custom Packet Header (`Packet`, `Frame`)**
-  * Adds our 18-byte public header (flags, Connection ID, Path ID, Packet Number) and converts it to/from network byte order. Everything after the header is a list of frames (`STREAM`, `ACK`, `WINDOW_UPDATE`, `PING`, `PATHS`), as in the reference paper. An `ACK` frame can carry up to 256 packet number ranges.
+  * Adds our 17-byte public header (Connection ID, Path ID, Packet Number) and converts it to/from network byte order. Everything after the header is a list of frames (`STREAM`, `ACK`, `WINDOW_UPDATE`, `PING`, `PATHS`), as in the reference paper. An `ACK` frame can carry up to 256 packet number ranges.
 
 - [x] **Phase 4 & 5: Reliability & ACKs (`SendStream`, `SentPacketHandler`, `ReceivedPacketHandler`, `RttStats`, `Connection`)**
   * Chunks application data into `STREAM` frames (stream ID + byte offset), gives every packet the next packet number of its path (`#1, #2...` per path), and sends back `ACK` frames (Path ID + packet number ranges + ACK delay) to measure the live RTT of each path.

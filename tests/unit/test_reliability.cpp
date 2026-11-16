@@ -1,6 +1,7 @@
 #include<bits/stdc++.h>
 
 #include "packet/frame.hpp"
+#include "packet/packet.hpp"
 #include "reliability/rtt_stats.hpp"
 #include "congestion_control/congestion.hpp"
 #include "reliability/send_stream.hpp"
@@ -59,7 +60,7 @@ void test_send_stream_chunking()
     assert(stream.has_data());
 
     Frame f;
-    size_t max_frame=1332; // packet space after 18B header
+    size_t max_frame=MAX_PACKET_SIZE-Packet::HEADER_SIZE; // packet space after the 17-byte header (1333)
     size_t chunk=max_frame-STREAM_FRAME_HEADER_SIZE;
 
     // Not enough space for 1 byte of data

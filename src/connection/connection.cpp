@@ -74,7 +74,7 @@ void Connection::broadcast_close(uint32_t error_code, const string &reason)
 {
     uint64_t now_us=Packet::current_time_us();
     for(const auto &[path_id, path] : paths){
-        Packet packet(FLAG_NONE, connection_id, path->get_id(), path->peek_packet_number());
+        Packet packet(connection_id, path->get_id(), path->peek_packet_number());
         packet.add_frame(Frame::make_connection_close(error_code, reason));
         send_packet(path, packet, now_us);
     }
@@ -438,7 +438,7 @@ void Connection::send_startup_copy(Path *sent_on, const Packet &packet, uint64_t
         return;
     }
 
-    Packet duplicate(FLAG_NONE, connection_id, other_path->get_id(), other_path->peek_packet_number());
+    Packet duplicate(connection_id, other_path->get_id(), other_path->peek_packet_number());
 
     // Copy STREAM frames with same offsets
     for(const auto &frame : packet.get_frames()){
@@ -485,7 +485,7 @@ void Connection::send_pending()
         }
 
         // Use next packet number of this path
-        Packet packet(FLAG_NONE, connection_id, path->get_id(), path->peek_packet_number());
+        Packet packet(connection_id, path->get_id(), path->peek_packet_number());
 
         attach_ack(path, packet, now_us);
         attach_control_frames(path, packet);
@@ -520,7 +520,7 @@ void Connection::flush_acks_and_control(uint64_t now_us)
 {
     for(const auto &[path_id, path] : paths){
         while(true){
-            Packet packet(FLAG_NONE, connection_id, path->get_id(), path->peek_packet_number());
+            Packet packet(connection_id, path->get_id(), path->peek_packet_number());
 
             attach_ack(path, packet, now_us);
             attach_control_frames(path, packet);
