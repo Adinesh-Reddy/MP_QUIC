@@ -1,10 +1,8 @@
-#include <iostream>
-#include <cstring>
-#include <cerrno>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include<bits/stdc++.h>
+#include<unistd.h>
+#include<arpa/inet.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
 
 #include "sockets/udp_socket.hpp"
 
@@ -12,10 +10,9 @@ using namespace std;
 
 UDPSocket::UDPSocket()
 {
-    fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
-    if (fd < 0)
-    {
-        cout << "Error: could not create a UDP socket (" << strerror(errno) << ")\n";
+    fd=socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, 0);
+    if(fd<0){
+        cout<<"[ERROR] Socket create failed: "<<strerror(errno)<<"\n";
     }
 }
 
@@ -26,96 +23,74 @@ UDPSocket::~UDPSocket()
 
 bool UDPSocket::bind(const string &ip, uint16_t port)
 {
-    if (!isValid())
+    if(!isValid())
         return false;
 
     sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
+    addr.sin_family=AF_INET;
+    addr.sin_port=htons(port);
 
-    if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) <= 0)
-    {
-        cout << "Error: \"" << ip << "\" is not a valid IPv4 address (example of a good one: 10.0.0.1)\n";
+    if(inet_pton(AF_INET, ip.c_str(), &addr.sin_addr)<=0){
+        cout<<"[ERROR] Invalid IPv4 address: "<<ip<<"\n";
         return false;
     }
 
-    if (::bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    {
-        int reason = errno;
-        cout << "Error: could not use the address " << ip << ":" << port << " (" << strerror(reason) << ")\n";
-        // The usual causes, with what to do
-        if (reason == EADDRNOTAVAIL)
-            cout << "  This computer does not have the address " << ip
-                 << ". Check its addresses with: ip -br -4 addr\n";
-        else if (reason == EADDRINUSE)
-            cout << "  Another program already uses port " << port
-                 << ". Maybe an old mpq_server is still running: stop it with: pkill mpq_server\n";
-        else if (reason == EACCES)
-            cout << "  Ports below 1024 need root. Use a higher port, for example 4433.\n";
+    if(::bind(fd, (struct sockaddr *)&addr, sizeof(addr))<0){
+        cout<<"[ERROR] Cannot bind "<<ip<<":"<<port<<" ("<<strerror(errno)<<")\n";
         return false;
     }
 
-    cout << "Opened a UDP socket on " << ip << ":" << get_local_port() << "\n";
+    cout<<"[SOCKET] Opened UDP socket on "<<ip<<":"<<get_local_port()<<"\n";
     return true;
 }
 
 ssize_t UDPSocket::sendTo(const uint8_t *data, size_t length, const string &dest_ip, uint16_t dest_port)
 {
-    if (!isValid())
+    if(!isValid())
         return -1;
 
     sockaddr_in dest_addr;
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(dest_port);
+    dest_addr.sin_family=AF_INET;
+    dest_addr.sin_port=htons(dest_port);
 
-    if (inet_pton(AF_INET, dest_ip.c_str(), &dest_addr.sin_addr) <= 0)
-    {
-        cout << "Error: cannot send, \"" << dest_ip << "\" is not a valid IPv4 address\n";
+    if(inet_pton(AF_INET, dest_ip.c_str(), &dest_addr.sin_addr)<=0){
+        cout<<"[ERROR] Invalid destination IPv4 address: "<<dest_ip<<"\n";
         return -1;
     }
 
-    ssize_t sent = sendto(fd, data, length, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-    if (sent < 0)
-    {
-        int reason = errno;
-        cout << "Could not send a packet to " << dest_ip << ":" << dest_port << " (" << strerror(reason) << ")";
-        if (reason == ENETUNREACH || reason == EHOSTUNREACH)
-            cout << ": there is no route to this address, check the cable and the routes of this path";
-        else if (reason == EAGAIN || reason == EWOULDBLOCK || reason == ENOBUFS)
-            cout << ": the send buffer is full, this packet is dropped and will be sent again later";
-        cout << "\n";
+    ssize_t sent=sendto(fd, data, length, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    if(sent<0){
+        cout<<"[ERROR] Send to "<<dest_ip<<":"<<dest_port<<" failed: "<<strerror(errno)<<"\n";
     }
     return sent;
 }
 
 ssize_t UDPSocket::recvFrom(uint8_t *buffer, size_t max_length, string &src_ip, uint16_t &src_port)
 {
-    if (!isValid())
+    if(!isValid())
         return -1;
 
     sockaddr_in src_addr;
-    socklen_t addr_len = sizeof(src_addr);
+    socklen_t addr_len=sizeof(src_addr);
 
-    ssize_t received = recvfrom(fd, buffer, max_length, 0, (struct sockaddr *)&src_addr, &addr_len);
-    if (received > 0)
-    {
+    ssize_t received=recvfrom(fd, buffer, max_length, 0, (struct sockaddr *)&src_addr, &addr_len);
+    if(received>0){
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &src_addr.sin_addr, ip_str, sizeof(ip_str));
-        src_ip = ip_str;
-        src_port = ntohs(src_addr.sin_port);
+        src_ip=ip_str;
+        src_port=ntohs(src_addr.sin_port);
     }
     return received;
 }
 
 uint16_t UDPSocket::get_local_port()
 {
-    if (!isValid())
+    if(!isValid())
         return 0;
 
     sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
-    if (getsockname(fd, (struct sockaddr *)&addr, &addr_len) < 0)
-    {
+    socklen_t addr_len=sizeof(addr);
+    if(getsockname(fd, (struct sockaddr *)&addr, &addr_len)<0){
         return 0;
     }
     return ntohs(addr.sin_port);
@@ -123,31 +98,25 @@ uint16_t UDPSocket::get_local_port()
 
 bool UDPSocket::set_buffer_size(int bytes)
 {
-    if (!isValid())
+    if(!isValid())
         return false;
 
-    bool ok = true;
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bytes, sizeof(bytes)) < 0)
-        ok = false;
-    if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes)) < 0)
-        ok = false;
+    bool ok=true;
+    if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bytes, sizeof(bytes))<0)
+        ok=false;
+    if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes))<0)
+        ok=false;
 
-    // Linux does not refuse a size above net.core.rmem_max / wmem_max: it silently caps it.
-    // Read the sizes back (the kernel reports twice the usable size) and say so, because a
-    // small receive buffer loses whole bursts of packets on fast, large transfers.
-    int receive_size = 0;
-    int send_size = 0;
-    socklen_t length = sizeof(int);
+    // Linux caps buffer sizes at rmem_max/wmem_max silently; read back to warn if smaller
+    int receive_size=0;
+    int send_size=0;
+    socklen_t length=sizeof(int);
     getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &receive_size, &length);
-    length = sizeof(int);
+    length=sizeof(int);
     getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &send_size, &length);
-    if (receive_size / 2 < bytes || send_size / 2 < bytes)
-    {
-        cout << "Note: this system limits the UDP buffers of the socket on port " << get_local_port()
-             << " to " << receive_size / 2 / 1024 << " kB (receive) and " << send_size / 2 / 1024
-             << " kB (send) instead of the " << bytes / 1024 << " kB asked for.\n"
-             << "  Large transfers may then lose packets in bursts. To raise the limit (until reboot):\n"
-             << "  sudo sysctl -w net.core.rmem_max=" << bytes << " net.core.wmem_max=" << bytes << "\n";
+    if(receive_size/2<bytes||send_size/2<bytes){
+        cout<<"[INFO] Port "<<get_local_port()<<" UDP buffer capped at "<<receive_size/2/1024<<"kB rx / "
+             <<send_size/2/1024<<"kB tx (asked "<<bytes/1024<<"kB)\n";
     }
     return ok;
 }
@@ -159,14 +128,13 @@ int UDPSocket::get_fd()
 
 bool UDPSocket::isValid() const
 {
-    return fd >= 0;
+    return fd>=0;
 }
 
 void UDPSocket::close()
 {
-    if (fd >= 0)
-    {
+    if(fd>=0){
         ::close(fd);
-        fd = -1;
+        fd=-1;
     }
 }

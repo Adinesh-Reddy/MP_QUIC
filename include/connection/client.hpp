@@ -1,7 +1,7 @@
 #ifndef CLIENT_HPP
 #define CLIENT_HPP
 
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 #include "sockets/udp_socket.hpp"
 #include "sockets/socket_manager.hpp"
 #include "path/path_manager.hpp"
@@ -9,27 +9,19 @@
 
 using namespace std;
 
-// Client endpoint: one connection to a server, over one path per local interface.
-//
-//   Client client;
-//   client.add_local_address("10.0.0.1");      // first interface: carries the initial path
-//   client.add_local_address("10.0.1.1");      // second interface: a second path is opened later
-//   client.connect("10.0.0.2", 4433);          // creates Path ID 0
-//   client.get_connection()->write(...);       // the first packet opens the connection
-//
-// The second path is opened when the server has answered and advertised its addresses
-// (ADD_ADDRESS frame). With a single local address the connection stays single-path.
-//
-// Like the Server, the client does not run its own event loop: give its sockets to a
-// SocketManager, pass every datagram to handle_datagram() and call on_tick() regularly.
+/*
+ Client endpoint: connects to one server using one path per local address.
+ Extra paths open after the server sends ADD_ADDRESS.
+ Uses an external SocketManager (register_sockets, handle_datagram, on_tick).
+*/
 class Client
 {
 public:
     Client();                       // random Connection ID
     Client(uint64_t connection_id);
 
-    // Binds a UDP socket on one of the addresses of this host (port 0 = chosen by the system)
-    bool add_local_address(const string &ip, uint16_t port = 0);
+    // Bind UDP socket on local IP (port 0 = OS picks a free port)
+    bool add_local_address(const string &ip, uint16_t port=0);
 
     bool connect(const string &server_ip, uint16_t server_port);
 
@@ -45,8 +37,7 @@ public:
 private:
     static uint64_t random_connection_id();
 
-    // Order of the members = order of creation. They are destroyed in the opposite order:
-    // first the paths (path manager), then the connection, then the sockets.
+    // Destroy order (reverse): path_manager -> connection -> sockets
     vector<unique_ptr<UDPSocket>> sockets;
     Connection connection;
     PathManager path_manager;

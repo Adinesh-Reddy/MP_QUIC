@@ -1,46 +1,38 @@
 #ifndef FILE_WRITER_HPP
 #define FILE_WRITER_HPP
 
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 
 using namespace std;
 
-// Writes a downloaded file from a thread of its own.
-//
-// Why: the network loop is a single thread. If it wrote to the disk itself, every time the
-// disk falls behind (Linux makes write() wait once too much unsaved data has piled up in
-// memory, which happens after a few hundred MB to a few GB) the loop would stop reading
-// packets and sending ACKs, and the sender would conclude that the path is broken.
-// With this class the network thread only copies the bytes into memory; this thread
-// saves them to the disk at the disk's own pace.
-//
-// Only the network thread calls write(), failed() and finish().
+/*
+ Writes downloaded bytes to disk on a separate thread.
+ Keeps disk writes from blocking the single-threaded network loop.
+ Only call write(), failed(), and finish() from the network thread.
+*/
 class FileWriter
 {
 public:
-    // Data is handed to the disk thread in blocks of this size
-    static constexpr size_t BLOCK_SIZE = 256 * 1024;
-    // At most this much data waits in memory for the disk (about 10 s of a 50 Mbit/s download).
-    // Only if the disk falls further behind than this does write() wait for it.
-    static constexpr size_t MAX_QUEUED_BYTES = 64 * 1024 * 1024;
+    // Size of each write block passed to disk thread (256 kB)
+    static constexpr size_t BLOCK_SIZE=256*1024;
+    // Max bytes buffered in memory before write() waits for disk (64 MB)
+    static constexpr size_t MAX_QUEUED_BYTES=64*1024*1024;
 
-    FileWriter() = default;
-    FileWriter(const FileWriter &) = delete;
-    FileWriter &operator=(const FileWriter &) = delete;
+    FileWriter()=default;
+    FileWriter(const FileWriter &)=delete;
+    FileWriter &operator=(const FileWriter &)=delete;
     ~FileWriter();
 
-    // Creates (or empties) the file and starts the disk thread. False if the file cannot be created.
+    // Open/truncate file and start disk thread
     bool open(const string &path);
 
-    // Queues bytes for the file. Returns at once unless MAX_QUEUED_BYTES are already waiting.
-    // After a write error the bytes are dropped.
+    // Queue bytes for disk thread (drops data after an error)
     void write(const uint8_t *data, size_t length);
 
-    // True once a write to the disk has failed (disk full, ...)
+    // True if a disk write failed
     bool failed() const;
 
-    // Waits until everything is on the disk, closes the file and stops the thread.
-    // Returns "" on success, otherwise a message saying what went wrong.
+    // Wait for pending writes, close file, and stop thread; "" on success or error text
     string finish();
 
 private:
@@ -51,15 +43,15 @@ private:
     thread disk_thread;
 
     mutable mutex lock;
-    condition_variable work_ready;  // signalled when a full block (or the end) is there
-    condition_variable room_freed;  // signalled when the disk thread has written a block
+    condition_variable work_ready;  // woken when a full block or close is ready
+    condition_variable room_freed;  // woken when disk thread finishes a block
     deque<vector<uint8_t>> blocks;
-    size_t queued_bytes = 0;
-    bool closing = false;
-    bool finished = false;
+    size_t queued_bytes=0;
+    bool closing=false;
+    bool finished=false;
 
     atomic<bool> write_error{false};
-    string error_text; // set by the disk thread before write_error, read after it
+    string error_text; // written before write_error=true, read after
 };
 
 #endif

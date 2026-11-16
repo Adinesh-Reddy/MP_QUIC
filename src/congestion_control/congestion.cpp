@@ -1,4 +1,4 @@
-#include <bits/stdc++.h>
+#include<bits/stdc++.h>
 
 #include "congestion_control/congestion.hpp"
 
@@ -6,7 +6,7 @@ using namespace std;
 
 FixedWindowCongestion::FixedWindowCongestion(uint64_t window_packets)
 {
-    congestion_window = window_packets;
+    congestion_window=window_packets;
 }
 
 void FixedWindowCongestion::on_packet_sent(uint64_t /*now_us*/, uint64_t /*bytes_in_flight*/, uint64_t /*packet_number*/,
@@ -37,5 +37,5 @@ string FixedWindowCongestion::get_name() const
 
 uint64_t FixedWindowCongestion::get_congestion_window() const
 {
-    return congestion_window * CongestionDefaults::MSS_BYTES;
+    return congestion_window*CongestionDefaults::MSS_BYTES;
 }
