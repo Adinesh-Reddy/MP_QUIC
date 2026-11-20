@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""
+MP-QUIC Scenario 2 (Section 4.2: Short 256 KB File Downloads) Plotter
+Replicates:
+  - Figure 9: CDF of Transfer Completion Time (ms) - (MP)QUIC vs (MP)TCP
+  - Figure 10: Aggregation Benefit (E_Ben) Distribution for Short Transfers
+from ACM CoNEXT 2017: "Multipath QUIC: Design and Evaluation"
+"""
+
+import sys
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+def main():
+    csv_file = sys.argv[1] if len(sys.argv) > 1 else 'results_scenario2_short.csv'
+    
+    if not os.path.exists(csv_file):
+        print(f"[ERROR] '{csv_file}' not found! Run 'scripts/run_scenario2_short.sh' first.")
+        sys.exit(1)
+
+    df = pd.read_csv(csv_file)
+    print(f"Loaded {len(df)} short transfer scenarios from '{csv_file}'.")
+
+    # Filter out invalid / zero rows if any
+    valid = df[(df['time_quic_a'] > 0) | (df['time_mpquic_a'] > 0)].copy()
+    if len(valid) == 0:
+        print("[ERROR] No valid non-zero rows in CSV!")
+        sys.exit(1)
+
+    has_tcp = ('time_tcp_a' in valid.columns and (valid['time_tcp_a'] > 0).any())
+    has_mptcp = ('time_mptcp_a' in valid.columns and (valid['time_mptcp_a'] > 0).any())
+
+    print("\n======================================================================")
+    print("      SCENARIO 2: SHORT 256 KB DOWNLOAD PERFORMANCE SUMMARY           ")
+    print("======================================================================")
+    print(f"Valid Scenarios Evaluated: {len(valid)}")
+    print(f"Median QUIC Path A Completion Time  : {valid['time_quic_a'].median():.1f} ms")
+    if 'time_mpquic_a' in valid.columns:
+        print(f"Median MP-QUIC Completion Time      : {valid['time_mpquic_a'].median():.1f} ms")
+    if has_tcp:
+        print(f"Median TCP Path A Completion Time   : {valid['time_tcp_a'].median():.1f} ms")
+        speedup = valid['time_tcp_a'].median() / valid['time_quic_a'].median()
+        print(f"QUIC vs TCP Latency Advantage       : {speedup:.2f}x faster ({valid['time_tcp_a'].median() - valid['time_quic_a'].median():.1f} ms saved)")
+    if 'eben_mpquic_a' in valid.columns:
+        print(f"Median MP-QUIC E_Ben                : {valid['eben_mpquic_a'].median():.3f}")
+    if has_mptcp and 'eben_mptcp_a' in valid.columns:
+        print(f"Median MPTCP E_Ben                  : {valid['eben_mptcp_a'].median():.3f}")
+    print("======================================================================\n")
+
+    # -------------------------------------------------------------------------
+    # FIGURE 9: CDF OF COMPLETION TIME (ms)
+    # -------------------------------------------------------------------------
+    plt.figure(figsize=(8, 5.5))
+    
+    # Single-Path QUIC
+    quic_times = np.sort(valid[valid['time_quic_a'] > 0]['time_quic_a'].values)
+    quic_cdf = np.arange(1, len(quic_times) + 1) / len(quic_times)
+    plt.plot(quic_times, quic_cdf, label='Single-Path QUIC (Path A)', color='#1f77b4', linewidth=2.5)
+
+    # Multipath QUIC
+    if 'time_mpquic_a' in valid.columns and (valid['time_mpquic_a'] > 0).any():
+        mpq_times = np.sort(valid[valid['time_mpquic_a'] > 0]['time_mpquic_a'].values)
+        mpq_cdf = np.arange(1, len(mpq_times) + 1) / len(mpq_times)
+        plt.plot(mpq_times, mpq_cdf, label='MP-QUIC (Path A initial)', color='#2ca02c', linewidth=2.2, linestyle='-')
+
+    # Single-Path TCP
+    if has_tcp:
+        tcp_times = np.sort(valid[valid['time_tcp_a'] > 0]['time_tcp_a'].values)
+        tcp_cdf = np.arange(1, len(tcp_times) + 1) / len(tcp_times)
+        plt.plot(tcp_times, tcp_cdf, label='Single-Path TCP (Path A)', color='#d62728', linewidth=2.0, linestyle='--')
+
+    # Multipath TCP
+    if has_mptcp:
+        mptcp_times = np.sort(valid[valid['time_mptcp_a'] > 0]['time_mptcp_a'].values)
+        mptcp_cdf = np.arange(1, len(mptcp_times) + 1) / len(mptcp_times)
+        plt.plot(mptcp_times, mptcp_cdf, label='MPTCP (Path A initial)', color='#ff7f0e', linewidth=2.0, linestyle=':')
+
+    plt.xlabel('Download Completion Time (ms)', fontsize=12)
+    plt.ylabel('CDF (Fraction of Transfers)', fontsize=12)
+    plt.title('Figure 9: Short 256 KB Download Completion Time CDF\n(CoNEXT 2017 Section 4.2 Reproduction)', fontsize=13, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc='lower right', frameon=True, fontsize=10)
+    plt.ylim(-0.02, 1.02)
+    plt.tight_layout()
+
+    out_fig9 = 'figure9_completion_time_cdf.png'
+    plt.savefig(out_fig9, dpi=300)
+    plt.close()
+    print(f"[SAVED] {out_fig9}")
+
+    # -------------------------------------------------------------------------
+    # FIGURE 10: AGGREGATION BENEFIT (E_Ben) BOXPLOT
+    # -------------------------------------------------------------------------
+    plt.figure(figsize=(7, 5))
+    
+    box_data = []
+    box_labels = []
+
+    if has_mptcp and 'eben_mptcp_a' in valid.columns:
+        mptcp_eben = valid['eben_mptcp_a'].dropna().values
+        box_data.append(mptcp_eben)
+        box_labels.append('MPTCP\n(Path A Init)')
+
+    if 'eben_mpquic_a' in valid.columns:
+        mpq_eben = valid['eben_mpquic_a'].dropna().values
+        box_data.append(mpq_eben)
+        box_labels.append('MP-QUIC\n(Path A Init)')
+
+    if 'eben_mpquic_b' in valid.columns and (valid['eben_mpquic_b'] != 0).any():
+        mpq_b_eben = valid['eben_mpquic_b'].dropna().values
+        box_data.append(mpq_b_eben)
+        box_labels.append('MP-QUIC\n(Path B Init)')
+
+    if box_data:
+        bplot = plt.boxplot(box_data, tick_labels=box_labels, patch_artist=True,
+                            medianprops=dict(color='black', linewidth=2.5),
+                            widths=0.45)
+        
+        colors = ['#ffbb78', '#98df8a', '#aec7e8']
+        for patch, color in zip(bplot['boxes'], colors[:len(box_data)]):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.8)
+
+        plt.axhline(0, color='red', linestyle='--', linewidth=1.5, label='E_Ben = 0 (No Multipath Benefit)')
+        plt.ylabel('Aggregation Benefit (E_Ben)', fontsize=12)
+        plt.title('Figure 10: Aggregation Benefit (E_Ben) for Short Transfers\n(Demonstrating Multipath Disadvantage for Small Objects)', fontsize=12, fontweight='bold')
+        plt.ylim(-1.0, 1.0)
+        plt.grid(True, axis='y', alpha=0.3)
+        plt.legend(loc='upper right', frameon=True)
+        plt.tight_layout()
+
+        out_fig10 = 'figure10_eben_short_boxplot.png'
+        plt.savefig(out_fig10, dpi=300)
+        plt.close()
+        print(f"[SAVED] {out_fig10}")
+
+    print("\n[SUCCESS] Figures 9 and 10 generated successfully!")
+
+if __name__ == '__main__':
+    main()
