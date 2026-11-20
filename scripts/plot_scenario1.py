@@ -97,9 +97,9 @@ def main():
         plt.grid(True, alpha=0.3)
         plt.legend(loc='lower right', frameon=True)
         plt.tight_layout()
-        plt.savefig('figure3_time_ratio_cdf.png', dpi=300)
+        plt.savefig('time_ratio_cdf.png', dpi=300)
         plt.close()
-        print("[PLOT] Generated: 'figure3_time_ratio_cdf.png'")
+        print("[PLOT] Generated: 'time_ratio_cdf.png'")
 
         # Plot EBen Boxplot
         plt.figure(figsize=(7, 5))
@@ -116,9 +116,9 @@ def main():
         plt.grid(True, axis='y', alpha=0.3)
         plt.legend(loc='lower left', frameon=True)
         plt.tight_layout()
-        plt.savefig('figure4_eben_comparison.png', dpi=300)
+        plt.savefig('eben_comparison.png', dpi=300)
         plt.close()
-        print("[PLOT] Generated: 'figure4_eben_comparison.png'")
+        print("[PLOT] Generated: 'eben_comparison.png'")
         return
 
     # If has_tcp is True, proceed with 4-way evaluation:
@@ -172,14 +172,14 @@ def main():
 
     plt.xlabel('Time Ratio (Values > 1.0 mean QUIC is faster)', fontsize=11)
     plt.ylabel('CDF (Fraction of Scenarios)', fontsize=11)
-    plt.title('Figure 3 Reproduction: Time Ratio CDF across 100 Scenarios', fontsize=12, fontweight='bold')
+    plt.title('Time Ratio CDF across 100 Scenarios', fontsize=12, fontweight='bold')
     plt.xlim(0.4, 2.5)
     plt.ylim(-0.02, 1.02)
     plt.grid(True, alpha=0.3)
     plt.legend(loc='lower right', frameon=True)
     plt.tight_layout()
 
-    fig3_path = 'figure3_time_ratio_cdf.png'
+    fig3_path = 'time_ratio_cdf.png'
     plt.savefig(fig3_path, dpi=300)
     plt.close()
     print(f"[PLOT] Generated: '{fig3_path}'")
@@ -208,18 +208,18 @@ def main():
     plt.axhline(y=0.0, color='red', linestyle='--', linewidth=1.5, label='No Benefit (0.0)')
 
     plt.ylabel('Experimental Aggregation Benefit (EBen)', fontsize=11)
-    plt.title('Figure 4 Reproduction: Aggregation Benefit (MPTCP vs MPQUIC)', fontsize=12, fontweight='bold')
+    plt.title('Aggregation Benefit (MPTCP vs MPQUIC)', fontsize=12, fontweight='bold')
     plt.ylim(-0.5, 1.3)
     plt.grid(True, axis='y', alpha=0.3)
     plt.legend(loc='lower left', frameon=True)
     plt.tight_layout()
 
-    fig4_path = 'figure4_eben_comparison.png'
+    fig4_path = 'eben_comparison.png'
     plt.savefig(fig4_path, dpi=300)
     plt.close()
     print(f"[PLOT] Generated: '{fig4_path}'")
 
-    print("\n[SUCCESS] Figure 3 and Figure 4 generated matching the CoNEXT 2017 paper!")
+    print("\n[SUCCESS] generated matching the CoNEXT 2017 paper!")
 
 if __name__ == '__main__':
     main()

@@ -79,13 +79,13 @@ def main():
 
     plt.xlabel('Download Completion Time (us)', fontsize=12)
     plt.ylabel('CDF (Fraction of Transfers)', fontsize=12)
-    plt.title('Figure 9: Short 256 KB Download Completion Time CDF\n(CoNEXT 2017 Section 4.2 Reproduction)', fontsize=13, fontweight='bold')
+    plt.title('Short 256 KB Download Completion Time CDF', fontsize=13, fontweight='bold')
     plt.grid(True, alpha=0.3)
     plt.legend(loc='lower right', frameon=True, fontsize=10)
     plt.ylim(-0.02, 1.02)
     plt.tight_layout()
 
-    out_fig9 = 'figure9_completion_time_cdf.png'
+    out_fig9 = 'completion_time_cdf.png'
     plt.savefig(out_fig9, dpi=300)
     plt.close()
     print(f"[SAVED] {out_fig9}")
@@ -125,18 +125,18 @@ def main():
 
         plt.axhline(0, color='red', linestyle='--', linewidth=1.5, label='E_Ben = 0 (No Multipath Benefit)')
         plt.ylabel('Aggregation Benefit (E_Ben)', fontsize=12)
-        plt.title('Figure 10: Aggregation Benefit (E_Ben) for Short Transfers\n(Demonstrating Multipath Disadvantage for Small Objects)', fontsize=12, fontweight='bold')
+        plt.title('Aggregation Benefit (E_Ben) for Short Transfers\n(Demonstrating Multipath Disadvantage for Small Objects)', fontsize=12, fontweight='bold')
         plt.ylim(-1.0, 1.0)
         plt.grid(True, axis='y', alpha=0.3)
         plt.legend(loc='upper right', frameon=True)
         plt.tight_layout()
 
-        out_fig10 = 'figure10_eben_short_boxplot.png'
+        out_fig10 = 'eben_short_boxplot.png'
         plt.savefig(out_fig10, dpi=300)
         plt.close()
         print(f"[SAVED] {out_fig10}")
 
-    print("\n[SUCCESS] Figures 9 and 10 generated successfully!")
+    print("\n[SUCCESS] generated successfully!")
 
 if __name__ == '__main__':
     main()
