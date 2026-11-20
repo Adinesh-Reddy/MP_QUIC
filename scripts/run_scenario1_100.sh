@@ -38,8 +38,9 @@ echo "scenario_id,rate_a,delay_a,loss_a,rate_b,delay_b,loss_b,tcp_a,tcp_b,mptcp_
 run_quic() {
     local cmd="$1"
     local output
-    # Allow up to 75s for lossy / low-bandwidth links to complete 20MB transfer
-    output=$(timeout 75s $cmd 2>/dev/null | grep ^RESULT || true)
+    # Pass --timeout 180 directly to mpq_client so it closes cleanly (sends CONNECTION_CLOSE)
+    # instead of being killed by SIGTERM and leaving a 30s zombie on mpq_server
+    output=$(timeout 195s $cmd --timeout 180 2>/dev/null | grep ^RESULT || true)
     local kbps
     kbps=$(echo "$output" | grep -o 'goodput_kbps=[0-9]*' | cut -d= -f2)
     if [ -z "$kbps" ]; then echo "0"; else echo "$kbps"; fi
@@ -55,12 +56,12 @@ run_iperf() {
     if [ "$is_mptcp" = "1" ]; then prefix="mptcpize run "; fi
 
     local json_out
-    json_out=$(timeout 75s $prefix iperf3 -c "$srv_ip" -B "$loc_ip" -p "$port" -R -n 20M -J 2>/dev/null || true)
-    
-    python3 -c "
+    json_out=$(timeout 180s $prefix iperf3 -c "$srv_ip" -B "$loc_ip" -p "$port" -R -n 20M -J 2>/dev/null || true)
+
+    printf '%s' "$json_out" | python3 -c "
 import json, sys
 try:
-    d = json.loads('''$json_out''')
+    d = json.load(sys.stdin)
     bps = d['end']['sum_received']['bits_per_second']
     print(int(bps / 1000.0))
 except Exception:
@@ -120,11 +121,15 @@ for s in $(seq 1 "$NUM_SCENARIOS"); do
     # Shape routers
     ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$ROUTER_A" \
         "sudo tc qdisc replace dev eth0 root netem rate ${RATE_A}mbit delay ${DELAY_A}ms limit ${LIMIT_A} loss ${LOSS_A}% && \
-         sudo tc qdisc replace dev eth1 root netem rate ${RATE_A}mbit delay ${DELAY_A}ms limit ${LIMIT_A} loss ${LOSS_A}%" 2>/dev/null || true
+         sudo tc qdisc replace dev eth1 root netem rate ${RATE_A}mbit delay ${DELAY_A}ms limit ${LIMIT_A} loss ${LOSS_A}%" || {
+        echo "    [WARNING] Failed to shape Router A!"
+    }
 
     ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$ROUTER_B" \
         "sudo tc qdisc replace dev eth0 root netem rate ${RATE_B}mbit delay ${DELAY_B}ms limit ${LIMIT_B} loss ${LOSS_B}% && \
-         sudo tc qdisc replace dev eth1 root netem rate ${RATE_B}mbit delay ${DELAY_B}ms limit ${LIMIT_B} loss ${LOSS_B}%" 2>/dev/null || true
+         sudo tc qdisc replace dev eth1 root netem rate ${RATE_B}mbit delay ${DELAY_B}ms limit ${LIMIT_B} loss ${LOSS_B}%" || {
+        echo "    [WARNING] Failed to shape Router B!"
+    }
 
     sleep 1
 
