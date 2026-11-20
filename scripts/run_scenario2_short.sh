@@ -33,25 +33,35 @@ echo " Output CSV: $OUT_CSV"
 echo " Payload   : 256 KB ($FILE)"
 echo "======================================================================"
 
-# Write CSV Header with both completion times (ms) and goodput (kbps)
-echo "scenario_id,rate_a,delay_a,rate_b,delay_b,time_tcp_a,time_tcp_b,time_mptcp_a,time_mptcp_b,time_quic_a,time_quic_b,time_mpquic_a,time_mpquic_b,g_tcp_a,g_tcp_b,g_mptcp_a,g_mptcp_b,g_quic_a,g_quic_b,g_mpquic_a,g_mpquic_b,eben_mptcp_a,eben_mptcp_b,eben_mpquic_a,eben_mpquic_b" > "$OUT_CSV"
+# Write CSV Header with both completion times (us) and goodput (kbps)
+echo "scenario_id,rate_a,delay_a,rate_b,delay_b,time_us_tcp_a,time_us_tcp_b,time_us_mptcp_a,time_us_mptcp_b,time_us_quic_a,time_us_quic_b,time_us_mpquic_a,time_us_mpquic_b,g_tcp_a,g_tcp_b,g_mptcp_a,g_mptcp_b,g_quic_a,g_quic_b,g_mpquic_a,g_mpquic_b,eben_mptcp_a,eben_mptcp_b,eben_mpquic_a,eben_mpquic_b" > "$OUT_CSV"
 
 # Function to run mpq_client for short transfer
-# Returns: time_ms,goodput_kbps
+# Returns: time_us,goodput_kbps
 run_quic_short() {
     local cmd="$1"
-    local output
+    local t_start t_end output
+    t_start=$(date +%s%6N)
     output=$(timeout 20s $cmd 2>/dev/null | grep ^RESULT || true)
-    local t_ms g_kbps
-    t_ms=$(echo "$output" | grep -o 'time_ms=[0-9]*' | cut -d= -f2 || true)
+    t_end=$(date +%s%6N)
+
+    local t_us g_kbps
+    t_us=$(echo "$output" | grep -o 'time_us=[0-9]*' | cut -d= -f2 || true)
     g_kbps=$(echo "$output" | grep -o 'goodput_kbps=[0-9]*' | cut -d= -f2 || true)
-    if [ -z "$t_ms" ] || [ "$t_ms" -eq 0 ]; then t_ms="0"; fi
+
+    if [ -z "$t_us" ] || [ "$t_us" -eq 0 ]; then
+        if echo "$output" | grep -q 'status=ok'; then
+            t_us=$((t_end - t_start))
+        else
+            t_us="0"
+        fi
+    fi
     if [ -z "$g_kbps" ]; then g_kbps="0"; fi
-    echo "$t_ms,$g_kbps"
+    echo "$t_us,$g_kbps"
 }
 
 # Function to run iperf3 for short transfer (256 KB)
-# Returns: time_ms,goodput_kbps
+# Returns: time_us,goodput_kbps
 run_iperf_short() {
     local is_mptcp="$1"
     local srv_ip="$2"
@@ -69,9 +79,9 @@ try:
     d = json.loads('''$json_out''')
     sec = d['end']['sum_received']['seconds']
     bps = d['end']['sum_received']['bits_per_second']
-    time_ms = int(sec * 1000.0)
+    time_us = int(sec * 1000000.0)
     g_kbps = int(bps / 1000.0)
-    print(f'{time_ms},{g_kbps}')
+    print(f'{time_us},{g_kbps}')
 except Exception:
     print('0,0')
 "
@@ -200,7 +210,7 @@ for s in $(seq 1 "$NUM_SCENARIOS"); do
     EBEN_MPQUIC_A=$(calc_eben "$G_MPQUIC_A" "$G_QUIC_A" "$G_QUIC_B")
     EBEN_MPQUIC_B=$(calc_eben "$G_MPQUIC_B" "$G_QUIC_A" "$G_QUIC_B")
 
-    echo "  [Time ms] TCP A: ${TIME_TCP_A}ms | QUIC A: ${TIME_QUIC_A}ms | MPTCP A: ${TIME_MPTCP_A}ms | MP-QUIC A: ${TIME_MPQUIC_A}ms"
+    echo "  [Time us] TCP A: ${TIME_TCP_A}us | QUIC A: ${TIME_QUIC_A}us | MPTCP A: ${TIME_MPTCP_A}us | MP-QUIC A: ${TIME_MPQUIC_A}us"
     echo "  [Goodput] TCP A: ${G_TCP_A}k | QUIC A: ${G_QUIC_A}k | MP-QUIC A: ${G_MPQUIC_A}k | EBen: ${EBEN_MPQUIC_A}"
 
     echo "$s,$RATE_A,$DELAY_A,$RATE_B,$DELAY_B,$TIME_TCP_A,$TIME_TCP_B,$TIME_MPTCP_A,$TIME_MPTCP_B,$TIME_QUIC_A,$TIME_QUIC_B,$TIME_MPQUIC_A,$TIME_MPQUIC_B,$G_TCP_A,$G_TCP_B,$G_MPTCP_A,$G_MPTCP_B,$G_QUIC_A,$G_QUIC_B,$G_MPQUIC_A,$G_MPQUIC_B,$EBEN_MPTCP_A,$EBEN_MPTCP_B,$EBEN_MPQUIC_A,$EBEN_MPQUIC_B" >> "$OUT_CSV"
