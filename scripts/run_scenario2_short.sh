@@ -164,31 +164,31 @@ for s in $(seq 1 "$NUM_SCENARIOS"); do
     G_MPTCP_B=$(echo "$pair" | cut -d, -f2)
 
     # 3. Single-Path QUIC
-    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --get $FILE"); sleep 0.2
-    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --get $FILE"); sleep 0.2
-    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --get $FILE"); sleep 0.2
+    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
     pair=$(calc_median_pair "$r1" "$r2" "$r3")
     TIME_QUIC_A=$(echo "$pair" | cut -d, -f1)
     G_QUIC_A=$(echo "$pair" | cut -d, -f2)
 
-    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --get $FILE"); sleep 0.2
-    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --get $FILE"); sleep 0.2
-    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --get $FILE"); sleep 0.2
+    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
     pair=$(calc_median_pair "$r1" "$r2" "$r3")
     TIME_QUIC_B=$(echo "$pair" | cut -d, -f1)
     G_QUIC_B=$(echo "$pair" | cut -d, -f2)
 
     # 4. Multipath QUIC
-    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --local $LOCAL_B_IP --get $FILE"); sleep 0.2
-    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --local $LOCAL_B_IP --get $FILE"); sleep 0.2
-    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --local $LOCAL_B_IP --get $FILE"); sleep 0.2
+    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --local $LOCAL_B_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --local $LOCAL_B_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_A_IP:4433 --local $LOCAL_A_IP --local $LOCAL_B_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
     pair=$(calc_median_pair "$r1" "$r2" "$r3")
     TIME_MPQUIC_A=$(echo "$pair" | cut -d, -f1)
     G_MPQUIC_A=$(echo "$pair" | cut -d, -f2)
 
-    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --local $LOCAL_A_IP --get $FILE"); sleep 0.2
-    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --local $LOCAL_A_IP --get $FILE"); sleep 0.2
-    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --local $LOCAL_A_IP --get $FILE"); sleep 0.2
+    r1=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --local $LOCAL_A_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r2=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --local $LOCAL_A_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
+    r3=$(run_quic_short "$CLIENT_BIN --server $SERVER_B_IP:4433 --local $LOCAL_B_IP --local $LOCAL_A_IP --get $FILE --out /tmp/$FILE"); sleep 0.2
     pair=$(calc_median_pair "$r1" "$r2" "$r3")
     TIME_MPQUIC_B=$(echo "$pair" | cut -d, -f1)
     G_MPQUIC_B=$(echo "$pair" | cut -d, -f2)
