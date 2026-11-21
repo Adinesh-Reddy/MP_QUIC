@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-MP-QUIC Scenario 1 4-Way Evaluation Plotter
-Replicates:
-  - Figure 3: CDF of Time Ratio (TCP/QUIC vs MPTCP/MPQUIC)
-  - Figure 4: Boxplot of EBen (MPTCP vs TCP and MPQUIC vs QUIC)
-from ACM CoNEXT 2017: "Multipath QUIC: Design and Evaluation"
+MP-QUIC Scenario 1: 4-Way Evaluation Plotter
+Generates:
+  - CDF of Time Ratio (TCP/QUIC vs MPTCP/MPQUIC)
+  - Boxplot of EBen (MPTCP vs TCP and MPQUIC vs QUIC)
 """
 
 import sys
@@ -14,10 +13,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def main():
-    csv_file = sys.argv[1] if len(sys.argv) > 1 else 'results_scenario1_100.csv'
+    csv_file = sys.argv[1] if len(sys.argv) > 1 else 'results_scenario1_20.csv'
     
     if not os.path.exists(csv_file):
-        print(f"[ERROR] '{csv_file}' not found! Run 'scripts/run_scenario1_100.sh' first.")
+        print(f"[ERROR] '{csv_file}' not found! Run 'scripts/run_scenario1_20.sh' first.")
         sys.exit(1)
 
     df = pd.read_csv(csv_file)
@@ -28,7 +27,7 @@ def main():
 
     if has_tcp:
         # ---------------------------------------------------------------------
-        # MODE 1: COMPLETE 4-WAY EVALUATION (CoNEXT 2017 Reproduction)
+        # MODE 1: COMPLETE 4-WAY EVALUATION
         # ---------------------------------------------------------------------
         valid = df[(df['tcp_a'] > 0) & (df['tcp_b'] > 0) &
                    (df['quic_a'] > 0) & (df['quic_b'] > 0) &
@@ -91,15 +90,15 @@ def main():
         plt.axvline(x=1.0, color='gray', linestyle=':', linewidth=1.5, label='Parity (Speedup = 1.0x)')
         plt.xlabel('Speedup Ratio over Best Single Path (Goodput_MP / Max(Single))', fontsize=11)
         plt.ylabel('CDF (Fraction of Scenarios)', fontsize=11)
-        plt.title('Speedup CDF across Scenarios (CoNEXT 2017 Metric)', fontsize=12, fontweight='bold')
+        plt.title('Speedup CDF across 20 Scenarios', fontsize=12, fontweight='bold')
         plt.xlim(0.5, 2.5)
         plt.ylim(-0.02, 1.02)
         plt.grid(True, alpha=0.3)
         plt.legend(loc='lower right', frameon=True)
         plt.tight_layout()
-        plt.savefig('time_ratio_cdf.png', dpi=300)
+        plt.savefig('time_ratio_cdf_20.png', dpi=300)
         plt.close()
-        print("[PLOT] Generated: 'time_ratio_cdf.png'")
+        print("[PLOT] Generated: 'time_ratio_cdf_20.png'")
 
         # Plot EBen Boxplot
         plt.figure(figsize=(7, 5))
@@ -111,20 +110,20 @@ def main():
         plt.axhline(y=1.0, color='green', linestyle=':', linewidth=1.5, label='Perfect Aggregation (1.0)')
         plt.axhline(y=0.0, color='red', linestyle='--', linewidth=1.5, label='No Benefit (0.0)')
         plt.ylabel('Experimental Aggregation Benefit (EBen)', fontsize=11)
-        plt.title('Aggregation Benefit (EBen) Distribution', fontsize=12, fontweight='bold')
+        plt.title('Aggregation Benefit (EBen) Distribution (20 Scenarios)', fontsize=12, fontweight='bold')
         plt.ylim(-0.5, 1.3)
         plt.grid(True, axis='y', alpha=0.3)
         plt.legend(loc='lower left', frameon=True)
         plt.tight_layout()
-        plt.savefig('eben_comparison.png', dpi=300)
+        plt.savefig('eben_comparison_20.png', dpi=300)
         plt.close()
-        print("[PLOT] Generated: 'eben_comparison.png'")
+        print("[PLOT] Generated: 'eben_comparison_20.png'")
         return
 
     # If has_tcp is True, proceed with 4-way evaluation:
 
     # -------------------------------------------------------------------------
-    # 1. TIME RATIOS (FIGURE 3)
+    # 1. TIME RATIOS
     # Time Ratio = Time_TCP / Time_QUIC
     # Since Time = Size / Goodput, Time_TCP / Time_QUIC = Goodput_QUIC / Goodput_TCP
     # Ratio > 1.0 means QUIC is faster than TCP!
@@ -142,7 +141,7 @@ def main():
     print("                     4-WAY EVALUATION RESULTS                         ")
     print("======================================================================")
     print(f"Valid Scenarios: {len(valid)}")
-    print(f"MPQUIC Faster than MPTCP: {mpquic_beat_mptcp:.1f}% of scenarios (Paper reported 89%)")
+    print(f"MPQUIC Faster than MPTCP: {mpquic_beat_mptcp:.1f}% of scenarios")
     print(f"Median Time Ratio (MPTCP / MPQUIC): {np.median(ratio_multi):.2f}x")
     print(f"Median Single-Path Time Ratio (TCP / QUIC): {np.median(ratio_single):.2f}x")
     print("----------------------------------------------------------------------")
@@ -153,7 +152,7 @@ def main():
     print("======================================================================\n")
 
     # -------------------------------------------------------------------------
-    # PLOT FIGURE 3: CDF of Time Ratio
+    # PLOT 1: CDF of Time Ratio
     # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 5))
     
@@ -172,20 +171,20 @@ def main():
 
     plt.xlabel('Time Ratio (Values > 1.0 mean QUIC is faster)', fontsize=11)
     plt.ylabel('CDF (Fraction of Scenarios)', fontsize=11)
-    plt.title('Time Ratio CDF across 100 Scenarios', fontsize=12, fontweight='bold')
+    plt.title('Time Ratio CDF across 20 Scenarios', fontsize=12, fontweight='bold')
     plt.xlim(0.4, 2.5)
     plt.ylim(-0.02, 1.02)
     plt.grid(True, alpha=0.3)
     plt.legend(loc='lower right', frameon=True)
     plt.tight_layout()
 
-    fig3_path = 'time_ratio_cdf.png'
-    plt.savefig(fig3_path, dpi=300)
+    cdf_path = 'time_ratio_cdf_20.png'
+    plt.savefig(cdf_path, dpi=300)
     plt.close()
-    print(f"[PLOT] Generated: '{fig3_path}'")
+    print(f"[PLOT] Generated: '{cdf_path}'")
 
     # -------------------------------------------------------------------------
-    # PLOT FIGURE 4: Boxplot of EBen (MPTCP vs MPQUIC)
+    # PLOT 2: Boxplot of EBen (MPTCP vs MPQUIC)
     # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 5))
     
@@ -208,18 +207,18 @@ def main():
     plt.axhline(y=0.0, color='red', linestyle='--', linewidth=1.5, label='No Benefit (0.0)')
 
     plt.ylabel('Experimental Aggregation Benefit (EBen)', fontsize=11)
-    plt.title('Aggregation Benefit (MPTCP vs MPQUIC)', fontsize=12, fontweight='bold')
+    plt.title('Aggregation Benefit (MPTCP vs MPQUIC - 20 Scenarios)', fontsize=12, fontweight='bold')
     plt.ylim(-0.5, 1.3)
     plt.grid(True, axis='y', alpha=0.3)
     plt.legend(loc='lower left', frameon=True)
     plt.tight_layout()
 
-    fig4_path = 'eben_comparison.png'
-    plt.savefig(fig4_path, dpi=300)
+    boxplot_path = 'eben_comparison_20.png'
+    plt.savefig(boxplot_path, dpi=300)
     plt.close()
-    print(f"[PLOT] Generated: '{fig4_path}'")
+    print(f"[PLOT] Generated: '{boxplot_path}'")
 
-    print("\n[SUCCESS] generated matching the CoNEXT 2017 paper!")
+    print("\n[SUCCESS] Plots generated successfully!")
 
 if __name__ == '__main__':
     main()

@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
-# MP-QUIC Scenario 2: Short File Downloads (256 KB) - Section 4.2 CoNEXT 2017
-# Replicates Figure 9 (Completion Time CDF) & Figure 10 (EBen Boxplot)
+# MP-QUIC Scenario 2: Short File Downloads (256 KB)
+# Generates Completion Time CDF & EBen Boxplot
 # ==============================================================================
 
 set -e
@@ -27,7 +27,7 @@ if [ ! -f "$CLIENT_BIN" ]; then
 fi
 
 echo "======================================================================"
-echo " Starting Section 4.2: Short 256 KB Downloads Benchmark"
+echo " Starting Scenario 2: Short 256 KB Downloads Benchmark"
 echo " Scenarios : $NUM_SCENARIOS"
 echo " Output CSV: $OUT_CSV"
 echo " Payload   : 256 KB ($FILE)"
@@ -116,7 +116,7 @@ else:
 }
 
 for s in $(seq 1 "$NUM_SCENARIOS"); do
-    # Section 4.2 specifies Low-BDP scenarios without random losses (0% loss)
+    # Low-BDP scenarios without random losses (0% loss)
     # Rate: 5 to 20 Mbps, Delay: 10 to 40 ms
     RATE_A=$(( ((s * 5 + 3) % 16) + 5 ))
     DELAY_A=$(( ((s * 7 + 5) % 25) + 10 ))
@@ -218,6 +218,6 @@ done
 
 echo ""
 echo "======================================================================"
-echo "[SUCCESS] Section 4.2 Benchmark Completed! Results saved to $OUT_CSV"
+echo "[SUCCESS] Scenario 2 Benchmark Completed! Results saved to $OUT_CSV"
 echo "Run: python3 scripts/plot_scenario2_short.py $OUT_CSV"
 echo "======================================================================"

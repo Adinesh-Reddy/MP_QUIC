@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
-# MP-QUIC Scenario 3: Active Handover & Path Failure (Section 4.3 CoNEXT 2017)
-# Evaluates seamless connection survival and sub-second failover (Figure 11)
+# MP-QUIC Scenario 3: Active Handover & Path Failure
+# Evaluates seamless connection survival and sub-second failover
 # ==============================================================================
 
 set -e
@@ -42,7 +42,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "======================================================================"
-echo " Starting Section 4.3: Active Handover & Path Failure Benchmark"
+echo " Starting Scenario 3: Active Handover & Path Failure Benchmark"
 echo " Initial Path A (Fast Link) : 8 Mbit/s, 10 ms delay (RTT ~20 ms)"
 echo " Initial Path B (Slow Link) : 4 Mbit/s, 25 ms delay (RTT ~50 ms)"
 echo " Cut Trigger                : Path A abruptly severed at t ~ 3.2s"
@@ -117,6 +117,6 @@ cleanup
 echo ""
 echo "======================================================================"
 echo "[COMPLETE] Scenario 3 Benchmark Completed!"
-echo "Now generating Figure 11 handover plots..."
+echo "Now generating handover plots..."
 python3 "$SCRIPT_DIR/plot_scenario3_handover.py" "$OUT_CSV" "$SINGLE_OUT_CSV"
 echo "======================================================================"

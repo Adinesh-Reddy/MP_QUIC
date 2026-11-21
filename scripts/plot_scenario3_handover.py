@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-MP-QUIC Scenario 3 (Section 4.3: Active Handover & Path Failure) Plotter
-Replicates:
-  - Figure 11: Request Completion Time Evolution & CDF under Active Handover
-from ACM CoNEXT 2017: "Multipath QUIC: Design and Evaluation"
+MP-QUIC Scenario 3: Active Handover & Path Failure Plotter
+Generates:
+  - Request Completion Time Evolution & CDF under Active Handover
 """
 
 import sys
@@ -75,7 +74,7 @@ def main():
 
     plt.xlabel('Connection Elapsed Time (seconds)', fontsize=12)
     plt.ylabel('Request Round-Trip Delay (ms)', fontsize=12)
-    plt.title('Figure 11: Request Delay Evolution under Active Link Failure\n(CoNEXT 2017 Section 4.3 Handover Evaluation)', 
+    plt.title('Request Delay Evolution under Active Link Failure\n(Handover Evaluation)', 
               fontsize=13, fontweight='bold')
     plt.grid(True, alpha=0.3)
     plt.ylim(0, max(spike_val * 1.35, 250))
@@ -89,7 +88,7 @@ def main():
     print(f"[PLOT] Generated: '{out_evolution}'")
 
     # -------------------------------------------------------------------------
-    # PLOT 2: CDF OF REQUEST COMPLETION TIME (ms) (FIGURE 11 IN PAPER)
+    # PLOT 2: CDF OF REQUEST COMPLETION TIME (ms)
     # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 5))
 
@@ -108,14 +107,14 @@ def main():
 
     plt.xlabel('Request Completion Delay (ms)', fontsize=12)
     plt.ylabel('CDF (Fraction of Requests)', fontsize=12)
-    plt.title('Figure 11 Reproduction: Request Delay CDF during Handover', fontsize=13, fontweight='bold')
+    plt.title('Request Delay CDF during Handover', fontsize=13, fontweight='bold')
     plt.grid(True, alpha=0.3)
     plt.xlim(0, max(valid_delays) + 30)
     plt.ylim(-0.02, 1.05)
     plt.legend(loc='lower right', frameon=True, fontsize=10)
     plt.tight_layout()
 
-    out_cdf = 'figure11_handover_cdf.png'
+    out_cdf = 'handover_cdf.png'
     plt.savefig(out_cdf, dpi=300)
     plt.close()
     print(f"[PLOT] Generated: '{out_cdf}'")

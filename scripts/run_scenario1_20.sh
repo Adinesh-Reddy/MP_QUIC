@@ -1,13 +1,13 @@
 #!/bin/bash
 # ==============================================================================
-# MP-QUIC Scenario 1: Complete 4-Protocol Automated Benchmark (100 Scenarios)
-# Replicates ACM CoNEXT 2017: TCP, MPTCP, Single-Path QUIC, and MP-QUIC
+# MP-QUIC Scenario 1: Complete 4-Protocol Automated Benchmark (20 Scenarios)
+# Evaluates TCP, MPTCP, Single-Path QUIC, and MP-QUIC
 # ==============================================================================
 
 set -e
 
-NUM_SCENARIOS=${1:-100}
-OUT_CSV="results_scenario1_100.csv"
+NUM_SCENARIOS=${1:-20}
+OUT_CSV="results_scenario1_20.csv"
 FILE="test20M.bin"
 
 SERVER_A_IP="10.0.2.2"
@@ -90,7 +90,7 @@ else:
 }
 
 for s in $(seq 1 "$NUM_SCENARIOS"); do
-    # 4 Factors from Section 5.1 of CoNEXT 2017:
+    # 4 Path Factors:
     # 1. Capacity: 5 to 25 Mbps
     # 2. Base one-way delay: 5 to 50 ms (RTT = 10 to 100 ms)
     # 3. Queuing delay: 10 to 100 ms (buffer capacity = BDP + queue backlog)
@@ -199,5 +199,5 @@ echo ""
 echo "======================================================================"
 echo " Complete! All 4 protocols tested across $NUM_SCENARIOS scenarios."
 echo " Output saved to: $OUT_CSV"
-echo " Run 'python3 scripts/plot_scenario1.py' to generate Figure 3 & Figure 4!"
+echo " Run 'python3 scripts/plot_scenario1.py' to generate the plots!"
 echo "======================================================================"

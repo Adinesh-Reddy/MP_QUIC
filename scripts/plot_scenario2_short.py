@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-MP-QUIC Scenario 2 (Section 4.2: Short 256 KB File Downloads) Plotter
-Replicates:
-  - Figure 9: CDF of Transfer Completion Time (us) - (MP)QUIC vs (MP)TCP
-  - Figure 10: Aggregation Benefit (E_Ben) Distribution for Short Transfers
-from ACM CoNEXT 2017: "Multipath QUIC: Design and Evaluation"
+MP-QUIC Scenario 2: Short 256 KB File Downloads Plotter
+Generates:
+  - CDF of Transfer Completion Time (us) - (MP)QUIC vs (MP)TCP
+  - Aggregation Benefit (E_Ben) Distribution for Short Transfers
 """
 
 import sys
@@ -50,7 +49,7 @@ def main():
     print("======================================================================\n")
 
     # -------------------------------------------------------------------------
-    # FIGURE 9: CDF OF COMPLETION TIME (us)
+    # PLOT 1: CDF OF COMPLETION TIME (us)
     # -------------------------------------------------------------------------
     plt.figure(figsize=(8, 5.5))
     
@@ -85,13 +84,13 @@ def main():
     plt.ylim(-0.02, 1.02)
     plt.tight_layout()
 
-    out_fig9 = 'completion_time_cdf.png'
-    plt.savefig(out_fig9, dpi=300)
+    out_cdf = 'completion_time_cdf.png'
+    plt.savefig(out_cdf, dpi=300)
     plt.close()
-    print(f"[SAVED] {out_fig9}")
+    print(f"[SAVED] {out_cdf}")
 
     # -------------------------------------------------------------------------
-    # FIGURE 10: AGGREGATION BENEFIT (E_Ben) BOXPLOT
+    # PLOT 2: AGGREGATION BENEFIT (E_Ben) BOXPLOT
     # -------------------------------------------------------------------------
     plt.figure(figsize=(7, 5))
     
@@ -131,10 +130,10 @@ def main():
         plt.legend(loc='upper right', frameon=True)
         plt.tight_layout()
 
-        out_fig10 = 'eben_short_boxplot.png'
-        plt.savefig(out_fig10, dpi=300)
+        out_boxplot = 'eben_short_boxplot.png'
+        plt.savefig(out_boxplot, dpi=300)
         plt.close()
-        print(f"[SAVED] {out_fig10}")
+        print(f"[SAVED] {out_boxplot}")
 
     print("\n[SUCCESS] generated successfully!")
 
