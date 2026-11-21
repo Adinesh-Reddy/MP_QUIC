@@ -1,6 +1,6 @@
 # Multipath QUIC (MP-QUIC)
 
-**Project:** Design, Implementation, and Evaluation of Multipath QUIC  
+**Project:** Multipath QUIC  
 **Team Members:** `cs24btech11039`, `cs24btech11026`, `cs24btech11009`, `cs24btech11027`, `cs24btech11045`, `cs24btech11016`  
 **Reference Paper:** Q. De Coninck and O. Bonaventure, "Multipath QUIC: Design and Evaluation," ACM CoNEXT 2017.
 
