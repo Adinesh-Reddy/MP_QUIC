@@ -6,17 +6,9 @@
 
 using namespace std;
 
-/*
- mpq_server: serves files and test replies over MP-QUIC.
-   mpq_server --listen 10.0.0.2:4433 --listen 10.0.1.2:4433 --dir files
- Requests (one per stream, ending with FIN):
-   "GET <name>\n"            -> "OK <size>\n" + file data, or "ERR <reason>\n"
-   "REQ <id> <reply size>\n" -> <reply size> bytes
- Files are read in FILE_CHUNK_SIZE chunks so memory stays small and ACKs never wait for disk.
-*/
-
-const size_t FILE_CHUNK_SIZE=64*1024;          // read chunk size
-const size_t SEND_BUFFER_TARGET=2*1024*1024; // keep stream buffered up to 2 MB
+// MP-QUIC file and request server
+const size_t FILE_CHUNK_SIZE=64*1024;
+const size_t SEND_BUFFER_TARGET=2*1024*1024;
 
 static SocketManager *running_manager=nullptr;
 
@@ -270,14 +262,13 @@ static int run(int argc, char **argv)
     return 0;
 }
 
-// Catch internal exceptions and print a clean message
 int main(int argc, char **argv)
 {
     try{
         return run(argc, argv);
     }
     catch(const exception &e){
-        cout<<"[ERROR] mpq_server internal error: "<<e.what()<<"\n";
+        cout<<"[ERROR] mpq_server error: "<<e.what()<<"\n";
         return 3;
     }
 }

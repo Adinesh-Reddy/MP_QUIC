@@ -50,7 +50,6 @@ private:
         NetworkAddress address;
     };
 
-    // Declare path_manager after connection so paths are destroyed first
     struct ServerConnection
     {
         unique_ptr<Connection> connection;

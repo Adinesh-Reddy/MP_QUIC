@@ -120,13 +120,13 @@ void Path::set_last_network_activity_time(uint64_t time_us)
 
 bool Path::on_rto(uint64_t last_sent_time_us)
 {
-    // Got a packet after our last send: path is just slow, not broken
+    // If a packet arrived after the last send, the path is still alive
     if(last_heard_us>=last_sent_time_us){
         return false;
     }
 
     looks_broken=true;
-    cout<<"[PATH] Path "<<(int)path_id<<" may be broken (no reply before RTO), resending its unacked packets (on another path if available)\n";
+    cout<<"[PATH] Path "<<(int)path_id<<" timeout, moving unacked packets for resend\n";
     return true;
 }
 

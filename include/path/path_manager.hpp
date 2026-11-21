@@ -9,31 +9,22 @@
 
 using namespace std;
 
-/*
- Owns and creates paths for one connection.
- Client: starts with path 0, then opens odd IDs (1, 3, ...) from other local sockets
- when ADD_ADDRESS arrives (sends PING to announce each new path).
- Server: creates paths when packets arrive with a new Path ID.
-*/
+// Manages paths for a connection
 class PathManager
 {
 public:
     PathManager(Connection *connection);
 
-    // Client side: add local socket/IP (first one is used for initial path 0)
+    // Register local socket and IP
     void add_local_socket(UDPSocket *socket, const string &local_ip);
 
-    // Open initial path (Path ID 0) from first local interface
+    // Open initial path (Path ID 0)
     Path *open_initial_path(const string &remote_ip, uint16_t remote_port);
 
-    /*
-     Open paths from remaining local interfaces using peer addresses from ADD_ADDRESS.
-     Falls back to initial remote address if no unused peer address is left.
-     Returns count of new paths opened.
-    */
+    // Open secondary paths when ADD_ADDRESS arrives
     size_t on_add_address(const vector<NetworkAddress> &addresses);
 
-    // Server side: find path, create on new valid ID (0 or odd), or update NAT address
+    // Find or create path when a packet arrives on the server
     Path *on_packet_received(uint8_t path_id, UDPSocket *socket, const string &local_ip,
                              const string &remote_ip, uint16_t remote_port);
 

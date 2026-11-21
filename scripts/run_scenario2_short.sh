@@ -1,8 +1,5 @@
 #!/bin/bash
-# ==============================================================================
-# MP-QUIC Scenario 2: Short File Downloads (256 KB)
-# Generates Completion Time CDF & EBen Boxplot
-# ==============================================================================
+# Scenario 2: Short file downloads (256 KB)
 
 set -e
 
@@ -22,16 +19,12 @@ ROUTER_B="vyos@10.0.1.254"
 CLIENT_BIN="./bin/mpq_client"
 
 if [ ! -f "$CLIENT_BIN" ]; then
-    echo "[ERROR] $CLIENT_BIN not found! Run 'make' first."
+    echo "[ERROR] $CLIENT_BIN not found. Run 'make' first."
     exit 1
 fi
 
-echo "======================================================================"
-echo " Starting Scenario 2: Short 256 KB Downloads Benchmark"
-echo " Scenarios : $NUM_SCENARIOS"
-echo " Output CSV: $OUT_CSV"
-echo " Payload   : 256 KB ($FILE)"
-echo "======================================================================"
+echo "Starting Scenario 2: Short 256 KB Downloads ($NUM_SCENARIOS scenarios)"
+echo "Output CSV: $OUT_CSV"
 
 # Write CSV Header with both completion times (us) and goodput (kbps)
 echo "scenario_id,rate_a,delay_a,rate_b,delay_b,time_us_tcp_a,time_us_tcp_b,time_us_mptcp_a,time_us_mptcp_b,time_us_quic_a,time_us_quic_b,time_us_mpquic_a,time_us_mpquic_b,g_tcp_a,g_tcp_b,g_mptcp_a,g_mptcp_b,g_quic_a,g_quic_b,g_mpquic_a,g_mpquic_b,eben_mptcp_a,eben_mptcp_b,eben_mpquic_a,eben_mpquic_b" > "$OUT_CSV"
@@ -127,11 +120,9 @@ for s in $(seq 1 "$NUM_SCENARIOS"); do
     LIMIT_B=100
 
     echo ""
-    echo "----------------------------------------------------------------------"
-    echo ">>> [Scenario $s / $NUM_SCENARIOS] (256 KB Short Download)"
-    echo "    Path A: ${RATE_A} Mbit/s, ${DELAY_A} ms delay (0% loss)"
-    echo "    Path B: ${RATE_B} Mbit/s, ${DELAY_B} ms delay (0% loss)"
-    echo "----------------------------------------------------------------------"
+    echo "[Scenario $s / $NUM_SCENARIOS] (256 KB)"
+    echo "  Path A: ${RATE_A} Mbit/s, ${DELAY_A} ms delay"
+    echo "  Path B: ${RATE_B} Mbit/s, ${DELAY_B} ms delay"
 
     # Shape routers
     ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$ROUTER_A" \
@@ -217,7 +208,5 @@ for s in $(seq 1 "$NUM_SCENARIOS"); do
 done
 
 echo ""
-echo "======================================================================"
-echo "[SUCCESS] Scenario 2 Benchmark Completed! Results saved to $OUT_CSV"
+echo "Done. Results saved to $OUT_CSV"
 echo "Run: python3 scripts/plot_scenario2_short.py $OUT_CSV"
-echo "======================================================================"

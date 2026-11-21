@@ -31,26 +31,22 @@ def main():
     has_tcp = ('time_us_tcp_a' in valid.columns and (valid['time_us_tcp_a'] > 0).any())
     has_mptcp = ('time_us_mptcp_a' in valid.columns and (valid['time_us_mptcp_a'] > 0).any())
 
-    print("\n======================================================================")
-    print("      SCENARIO 2: SHORT 256 KB DOWNLOAD PERFORMANCE SUMMARY           ")
-    print("======================================================================")
-    print(f"Valid Scenarios Evaluated: {len(valid)}")
-    print(f"Median QUIC Path A Completion Time  : {valid['time_us_quic_a'].median():.1f} us")
+    print("\nScenario 2: Short 256 KB Download Summary")
+    print(f"Valid Scenarios: {len(valid)}")
+    print(f"Median QUIC Path A Time  : {valid['time_us_quic_a'].median():.1f} us")
     if 'time_us_mpquic_a' in valid.columns:
-        print(f"Median MP-QUIC Completion Time      : {valid['time_us_mpquic_a'].median():.1f} us")
+        print(f"Median MP-QUIC Time      : {valid['time_us_mpquic_a'].median():.1f} us")
     if has_tcp:
-        print(f"Median TCP Path A Completion Time   : {valid['time_us_tcp_a'].median():.1f} us")
+        print(f"Median TCP Path A Time   : {valid['time_us_tcp_a'].median():.1f} us")
         speedup = valid['time_us_tcp_a'].median() / valid['time_us_quic_a'].median()
-        print(f"QUIC vs TCP Latency Advantage       : {speedup:.2f}x faster ({valid['time_us_tcp_a'].median() - valid['time_us_quic_a'].median():.1f} us saved)")
+        print(f"QUIC vs TCP Speedup      : {speedup:.2f}x")
     if 'eben_mpquic_a' in valid.columns:
-        print(f"Median MP-QUIC E_Ben                : {valid['eben_mpquic_a'].median():.3f}")
+        print(f"Median MP-QUIC E_Ben     : {valid['eben_mpquic_a'].median():.3f}")
     if has_mptcp and 'eben_mptcp_a' in valid.columns:
-        print(f"Median MPTCP E_Ben                  : {valid['eben_mptcp_a'].median():.3f}")
-    print("======================================================================\n")
+        print(f"Median MPTCP E_Ben       : {valid['eben_mptcp_a'].median():.3f}")
+    print("")
 
-    # -------------------------------------------------------------------------
-    # PLOT 1: CDF OF COMPLETION TIME (us)
-    # -------------------------------------------------------------------------
+    # Plot 1: CDF of completion time (us)
     plt.figure(figsize=(8, 5.5))
     
     # Single-Path QUIC
@@ -135,7 +131,7 @@ def main():
         plt.close()
         print(f"[SAVED] {out_boxplot}")
 
-    print("\n[SUCCESS] generated successfully!")
+    print("Done.")
 
 if __name__ == '__main__':
     main()

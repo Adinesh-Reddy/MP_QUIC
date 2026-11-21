@@ -74,8 +74,8 @@ void FileWriter::disk_loop()
         if(!write_error){
             file.write(reinterpret_cast<const char *>(block.data()), static_cast<streamsize>(block.size()));
             if(!file){
-                error_text="could not write to "+path+" (is the disk full?)";
-                write_error=true; // set after error_text
+                error_text="failed to write to "+path;
+                write_error=true;
             }
         }
 
@@ -103,11 +103,10 @@ string FileWriter::finish()
         disk_thread.join();
     }
 
-    // close() flushes buffered bytes; disk-full can show up here
     if(file.is_open()){
         file.close();
         if(error_text.empty()&&!file){
-            error_text="could not finish writing "+path+" (is the disk full?)";
+            error_text="failed to close "+path;
         }
     }
     return error_text;

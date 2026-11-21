@@ -28,11 +28,7 @@ void RttStats::update_rtt(uint64_t send_delta_us, uint64_t ack_delay_us)
         rttvar_us=sample/2;
     }
     else{
-        /*
-         rttvar = 3/4 * rttvar + 1/4 * |srtt - sample|
-         srtt   = 7/8 * srtt   + 1/8 * sample
-         Update rttvar first using the old srtt.
-        */
+        // Exponential moving average for rttvar and srtt
         uint64_t diff=(srtt_us>sample) ? (srtt_us-sample) : (sample-srtt_us);
         rttvar_us=(3*rttvar_us+diff)/4;
         srtt_us=(7*srtt_us+sample)/8;

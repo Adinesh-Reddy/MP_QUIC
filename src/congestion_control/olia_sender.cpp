@@ -147,7 +147,7 @@ void OliaSender::maybe_exit_slow_start()
     }
 }
 
-// Only grow the window when we are actually filling it
+// Only grow window when in-flight bytes are near the current window limit
 bool OliaSender::window_is_limiting(uint64_t bytes_in_flight) const
 {
     uint64_t window_bytes=get_congestion_window();
@@ -195,12 +195,7 @@ void OliaSender::grow_window(uint64_t bytes_in_flight)
     window=clamp(window_after_coupled_increase(), min_window, max_window);
 }
 
-/*
- Compute epsilon for each path:
-   best paths: highest (bytes between losses) / rtt^2
-   largest-window paths: paths with max window
- Best paths with smaller windows get +epsilon; largest-window paths get -epsilon.
-*/
+// Update OLIA epsilon values across all coupled paths
 void OliaSender::update_epsilons()
 {
     vector<OliaSender *> senders=connection_senders();
@@ -252,13 +247,9 @@ void OliaSender::update_epsilons()
     }
 }
 
-/*
- Compute next window using scaled integer math (S = 2^10 = 1024).
- Fractional increase accumulates in window_credit until +/-1 full packet.
-*/
+// Compute next window size using scaled integer arithmetic
 uint64_t OliaSender::window_after_coupled_increase()
 {
-    // rate = (SUM_p window_p * S * own_rtt / rtt_p)^2 (start at 1 to avoid div by 0)
     uint128 own_rtt=rtt_stats->get_smoothed_rtt();
     uint128 rate=1;
     for(OliaSender *sender : connection_senders()){

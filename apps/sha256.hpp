@@ -5,10 +5,7 @@
 
 using namespace std;
 
-/*
- SHA-256 (FIPS 180-4) used by apps to verify file transfers (not protocol security).
- Supports streaming updates in chunks.
-*/
+// Streaming SHA-256 hash calculation for file integrity checks
 class Sha256
 {
 public:

@@ -37,7 +37,6 @@ public:
 private:
     static uint64_t random_connection_id();
 
-    // Destroy order (reverse): path_manager -> connection -> sockets
     vector<unique_ptr<UDPSocket>> sockets;
     Connection connection;
     PathManager path_manager;

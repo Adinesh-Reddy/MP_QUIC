@@ -6,7 +6,7 @@
 
 using namespace std;
 
-// Callback types (using function so lambdas can capture state)
+// Callbacks for packet arrival and timer tick
 typedef function<void(int fd, const uint8_t *data, size_t len, string ip, uint16_t port)> RecvCallback;
 typedef function<void()> TickCallback;
 

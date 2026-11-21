@@ -6,12 +6,7 @@
 
 using namespace std;
 
-/*
- mpq_reqres: sends periodic small requests and measures reply delay (for handover tests).
-   mpq_reqres --server 10.0.0.2:4433 --local 10.0.0.1 --local 10.0.1.1 --out delays.csv
- Defaults: 750-byte requests every 400 ms; request k uses stream 2k+1.
-*/
-
+// Request-response latency measurement client
 static void usage()
 {
     cout<<"Usage: mpq_reqres --server IP:PORT --local IP [--local IP] [options]\n"
@@ -163,14 +158,13 @@ static int run(int argc, char **argv)
     return (answered==count&&error.empty()) ? 0 : 1;
 }
 
-// Catch internal exceptions and print a clean message
 int main(int argc, char **argv)
 {
     try{
         return run(argc, argv);
     }
     catch(const exception &e){
-        cout<<"[ERROR] mpq_reqres internal error: "<<e.what()<<"\n";
+        cout<<"[ERROR] mpq_reqres error: "<<e.what()<<"\n";
         return 3;
     }
 }

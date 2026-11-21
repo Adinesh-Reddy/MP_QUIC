@@ -95,7 +95,7 @@ size_t PathManager::on_add_address(const vector<NetworkAddress> &addresses)
         next_path_id+=2;
         opened++;
 
-        // Send PING so server sees the new path and we get first RTT
+        // Send PING to announce the new path and measure initial RTT
         connection->send_ping(path->get_id());
     }
 

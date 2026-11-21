@@ -29,11 +29,9 @@ def main():
 
     # Filter answered requests
     answered_mpq = df_mpq[df_mpq['delay_ms'] > 0].copy()
-    print(f"MP-QUIC: {len(answered_mpq)} / {len(df_mpq)} requests successfully delivered (100% reliability)!")
+    print(f"MP-QUIC: {len(answered_mpq)} / {len(df_mpq)} requests delivered")
 
-    # -------------------------------------------------------------------------
-    # PLOT 1: TIME EVOLUTION OF REQUEST DELAY (ms) DURING HANDOVER
-    # -------------------------------------------------------------------------
+    # Plot 1: Request delay over time during handover
     plt.figure(figsize=(9, 5.2))
 
     # Single-Path baseline (if available)
@@ -117,9 +115,8 @@ def main():
     out_cdf = 'handover_cdf.png'
     plt.savefig(out_cdf, dpi=300)
     plt.close()
-    print(f"[PLOT] Generated: '{out_cdf}'")
-
-    print("\n[SUCCESS] Scenario 3 Handover plots generated successfully!")
+    print(f"[PLOT] Saved '{out_cdf}'")
+    print("Done.")
 
 if __name__ == '__main__':
     main()

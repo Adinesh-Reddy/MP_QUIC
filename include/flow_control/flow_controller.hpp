@@ -39,7 +39,7 @@ public:
     // Move send_limit forward when WINDOW_UPDATE arrives (true if increased)
     bool update_send_window(uint64_t new_offset);
 
-    // Remaining bytes we can send
+    // Remaining bytes allowed to send
     uint64_t send_window_size() const;
     uint64_t get_send_window() const;
 
@@ -51,15 +51,12 @@ public:
 
     void add_bytes_read(uint64_t n, uint64_t now_us);
 
-    /*
-     True if a WINDOW_UPDATE is needed.
-     Sets new_offset (new window) and new_increment (new step if changed, else 0).
-    */
+    // Check if a WINDOW_UPDATE frame should be sent
     bool maybe_update_window(uint64_t now_us, uint64_t rtt_us, uint64_t &new_increment, uint64_t &new_offset);
 
     void ensure_minimum_window_increment(uint64_t inc);
 
-    // True if peer sent past our advertised window
+    // True if peer sent past the advertised window
     bool check_flow_control_violation() const;
 
     uint64_t get_receive_window() const;

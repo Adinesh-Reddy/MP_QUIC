@@ -17,17 +17,11 @@ namespace OliaTuning
     // Fractional packets are scaled by 2^SCALE_SHIFT (1024)
     constexpr unsigned SCALE_SHIFT=10;
 
-    // Halve window on loss (same as TCP Reno)
+    // Halve window on loss
     constexpr uint64_t LOSS_DIVISOR=2;
 }
 
-/*
- OLIA (Opportunistic Linked-Increases Algorithm) congestion control for one path.
- Slow start and loss cut work like TCP, but congestion avoidance is coupled across paths:
-   w_r / rtt_r^2 / (SUM_p w_p / rtt_p)^2 + epsilon_r / w_r
- First term keeps multipath fairness with single-path TCP.
- Second term shifts traffic from largest-window paths to best paths (positive epsilon).
-*/
+// Coupled OLIA congestion control for one path
 class OliaSender : public CongestionController
 {
 public:
@@ -48,7 +42,7 @@ public:
     uint64_t get_congestion_window() const override; // bytes
     string get_name() const override;
 
-    // Stats for tests and logs
+    // Window and threshold getters
     uint64_t get_congestion_window_packets() const;
     uint64_t get_slow_start_threshold_packets() const;
     uint64_t get_slow_start_threshold() const; // bytes

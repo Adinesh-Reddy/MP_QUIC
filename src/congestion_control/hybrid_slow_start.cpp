@@ -35,9 +35,8 @@ bool HybridSlowStart::should_exit_slow_start(uint64_t latest_rtt_us, uint64_t mi
         }
     }
 
-    // Check threshold once we have enough samples
+    // Check threshold after collecting enough samples
     if(round_samples==SAMPLES_PER_ROUND){
-        // Threshold = min_rtt / 8, clamped to [4ms, 16ms]
         uint64_t threshold=clamp(min_rtt_us>>RISE_SHIFT, MIN_RISE_US, MAX_RISE_US);
 
         if(round_min_rtt>min_rtt_us+threshold){

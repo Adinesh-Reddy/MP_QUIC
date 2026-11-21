@@ -12,7 +12,7 @@ UDPSocket::UDPSocket()
 {
     fd=socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, 0);
     if(fd<0){
-        int reason=errno; // save before cout can touch errno
+        int reason=errno;
         cout<<"[ERROR] Socket create failed: "<<strerror(reason)<<"\n";
     }
 }
@@ -37,7 +37,7 @@ bool UDPSocket::bind(const string &ip, uint16_t port)
     }
 
     if(::bind(fd, (struct sockaddr *)&addr, sizeof(addr))<0){
-        int reason=errno; // save before cout can touch errno
+        int reason=errno;
         cout<<"[ERROR] Cannot bind "<<ip<<":"<<port<<" ("<<strerror(reason)<<")\n";
         return false;
     }
@@ -62,7 +62,7 @@ ssize_t UDPSocket::sendTo(const uint8_t *data, size_t length, const string &dest
 
     ssize_t sent=sendto(fd, data, length, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if(sent<0){
-        int reason=errno; // save before cout can touch errno
+        int reason=errno;
         cout<<"[ERROR] Send to "<<dest_ip<<":"<<dest_port<<" failed: "<<strerror(reason)<<"\n";
     }
     return sent;
@@ -110,7 +110,7 @@ bool UDPSocket::set_buffer_size(int bytes)
     if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes))<0)
         ok=false;
 
-    // Linux caps buffer sizes at rmem_max/wmem_max silently; read back to warn if smaller
+    // Check actual buffer sizes allocated by OS
     int receive_size=0;
     int send_size=0;
     socklen_t length=sizeof(int);
@@ -118,8 +118,8 @@ bool UDPSocket::set_buffer_size(int bytes)
     length=sizeof(int);
     getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &send_size, &length);
     if(receive_size/2<bytes||send_size/2<bytes){
-        cout<<"[INFO] Port "<<get_local_port()<<" UDP buffer capped at "<<receive_size/2/1024<<"kB rx / "
-             <<send_size/2/1024<<"kB tx (asked "<<bytes/1024<<"kB); raise net.core.rmem_max / wmem_max\n";
+        cout<<"[INFO] Port "<<get_local_port()<<" UDP buffer set to "<<receive_size/2/1024<<"kB rx / "
+             <<send_size/2/1024<<"kB tx\n";
     }
     return ok;
 }

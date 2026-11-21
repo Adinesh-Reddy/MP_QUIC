@@ -27,14 +27,7 @@ public:
     virtual string get_name() const=0;
 };
 
-/*
- Lowest-RTT scheduler:
-   1. Skip full congestion windows (except for retransmissions).
-   2. Skip potentially failed paths.
-   3. Pick path with lowest smoothed RTT.
-   4. Unknown-RTT path loses to known-RTT paths; if none known, pick fewest packets.
-   5. Duplicate data sent on an unknown-RTT path onto another path.
-*/
+// Selects the healthy path with the lowest smoothed RTT
 class LowestRttScheduler : public Scheduler
 {
 public:

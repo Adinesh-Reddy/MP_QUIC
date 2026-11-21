@@ -1,8 +1,5 @@
 #!/bin/bash
-# ==============================================================================
-# MP-QUIC Scenario 3: Active Handover & Path Failure
-# Evaluates seamless connection survival and sub-second failover
-# ==============================================================================
+# Scenario 3: Active handover and path failure test
 
 set -e
 
@@ -41,16 +38,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "======================================================================"
-echo " Starting Scenario 3: Active Handover & Path Failure Benchmark"
-echo " Initial Path A (Fast Link) : 8 Mbit/s, 10 ms delay (RTT ~20 ms)"
-echo " Initial Path B (Slow Link) : 4 Mbit/s, 25 ms delay (RTT ~50 ms)"
-echo " Cut Trigger                : Path A abruptly severed at t ~ 3.2s"
-echo " Output CSV                 : $OUT_CSV"
-echo "======================================================================"
+echo "Starting Scenario 3: Handover Benchmark"
+echo "Path A: 8 Mbit/s, 10 ms delay | Path B: 4 Mbit/s, 25 ms delay"
+echo "Output CSV: $OUT_CSV"
 
-# 1. Shape Routers for standard handover asymmetric profile
-echo "[1/4] Applying link profiles on Router A & Router B..."
+# 1. Shape routers
+echo "[1/4] Applying link profiles on Router A and Router B..."
 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 "$ROUTER_A" \
     "sudo tc qdisc replace dev eth0 root netem rate 8mbit delay 10ms limit 50 && \
      sudo tc qdisc replace dev eth1 root netem rate 8mbit delay 10ms limit 50" 2>/dev/null || true
@@ -59,64 +52,57 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 "$ROUTER_B"
     "sudo tc qdisc replace dev eth0 root netem rate 4mbit delay 25ms limit 50 && \
      sudo tc qdisc replace dev eth1 root netem rate 4mbit delay 25ms limit 50" 2>/dev/null || true
 
-# Clean any existing clsact filters
 sudo tc qdisc del dev "$IF_A" clsact 2>/dev/null || true
 sleep 1
 
-# 2. Run MP-QUIC Handover Benchmark
+# 2. Run MP-QUIC handover test
 echo ""
-echo "[2/4] Launching MP-QUIC Handover flow (35 requests, 750B every 400ms)..."
+echo "[2/4] Running MP-QUIC handover flow (35 requests, 750B every 400ms)..."
 "$REQRES_BIN" --server "$SERVER_A_IP:4433" --local "$LOCAL_A_IP" --local "$LOCAL_B_IP" \
               --interval-ms 400 --size 750 --count 35 --out "$OUT_CSV" &
 PID_MPQ=$!
 
-# Wait ~3.2 seconds (approx requests 0-7 complete over Path A)
-echo "      Streaming requests over Path A (RTT ~20ms)..."
+echo "  Sending requests over Path A..."
 sleep 3.2
 
-# Abruptly cut Path A
-echo ">>> [CUT] Severing Path A at t=3.2s! (Dropping 100% packets on $IF_A)"
+# Cut Path A
+echo "  Cutting Path A at t=3.2s on $IF_A"
 sudo tc qdisc add dev "$IF_A" clsact 2>/dev/null || true
 sudo tc filter add dev "$IF_A" egress matchall action drop 2>/dev/null || true
 sudo tc filter add dev "$IF_A" ingress matchall action drop 2>/dev/null || true
 
-# Also drop on Router A via SSH if reachable
 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=2 "$ROUTER_A" \
     "sudo tc qdisc replace dev eth0 root netem loss 100%" 2>/dev/null || true
 
-# Wait for MP-QUIC to finish remaining requests over Path B
 wait $PID_MPQ || true
-echo "[SUCCESS] MP-QUIC handover completed! Saved to $OUT_CSV"
+echo "MP-QUIC handover finished. Saved to $OUT_CSV"
 
-# 3. Restore filter before Single-Path test
+# 3. Restore filter before single-path test
 sudo tc qdisc del dev "$IF_A" clsact 2>/dev/null || true
 ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 "$ROUTER_A" \
     "sudo tc qdisc replace dev eth0 root netem rate 8mbit delay 10ms limit 50 && \
      sudo tc qdisc replace dev eth1 root netem rate 8mbit delay 10ms limit 50" 2>/dev/null || true
 sleep 1
 
-# 4. Optional: Run Single-Path QUIC on Path A with the same link cut to demonstrate failure
+# 4. Run Single-Path QUIC on Path A with the same link cut
 echo ""
-echo "[3/4] Launching Single-Path control flow (to illustrate standard protocol failure)..."
+echo "[3/4] Running single-path baseline..."
 "$REQRES_BIN" --server "$SERVER_A_IP:4433" --local "$LOCAL_A_IP" \
               --interval-ms 400 --size 750 --count 35 --out "$SINGLE_OUT_CSV" &
 PID_SINGLE=$!
 sleep 3.2
 
-echo ">>> [CUT] Severing Path A for single-path baseline..."
+echo "  Cutting Path A for single-path run..."
 sudo tc qdisc add dev "$IF_A" clsact 2>/dev/null || true
 sudo tc filter add dev "$IF_A" egress matchall action drop 2>/dev/null || true
 sudo tc filter add dev "$IF_A" ingress matchall action drop 2>/dev/null || true
 
 wait $PID_SINGLE || true
-echo "[INFO] Single-path control completed (timeouts expected post-cut). Saved to $SINGLE_OUT_CSV"
+echo "Single-path run finished. Saved to $SINGLE_OUT_CSV"
 
 # 5. Restore network
 cleanup
 
 echo ""
-echo "======================================================================"
-echo "[COMPLETE] Scenario 3 Benchmark Completed!"
-echo "Now generating handover plots..."
+echo "Scenario 3 finished. Generating plots..."
 python3 "$SCRIPT_DIR/plot_scenario3_handover.py" "$OUT_CSV" "$SINGLE_OUT_CSV"
-echo "======================================================================"

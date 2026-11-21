@@ -603,29 +603,26 @@ void Connection::dispatch_frame(const Frame &frame, const Packet &packet, uint64
         }
 
         if(!acked_path->get_sent_packet_handler()->received_ack(frame.ack, with_packet_number, now_us)){
-            abort_with("the other side acknowledged a packet that we never sent (protocol error)");
+            abort_with("ack for unsent packet");
         }
         break;
     }
     case FRAME_WINDOW_UPDATE:
-        // Peer increased send window
         flow_control_manager.update_window(frame.window_update.stream_id, frame.window_update.byte_offset);
         break;
     case FRAME_PING:
-        break; // ACK already scheduled
+        break;
     case FRAME_ADD_ADDRESS:
-        // Peer sent its local addresses; PathManager can open paths to them
         if(address_handler!=nullptr){
             address_handler(frame.add_address.addresses);
         }
         break;
     case FRAME_CONNECTION_CLOSE:
-        // Peer closed the connection
         closed=true;
         closed_by_peer=true;
-        close_reason="the other side closed the connection";
+        close_reason="peer closed connection";
         if(!frame.connection_close.reason.empty()){
-            close_reason+=" (its reason: "+frame.connection_close.reason+")";
+            close_reason+=": "+frame.connection_close.reason;
         }
         break;
     case FRAME_PATHS:
@@ -656,19 +653,16 @@ void Connection::deliver_stream_frame(const StreamFrame &frame, uint64_t now_us)
 {
     uint32_t stream_id=frame.stream_id;
 
-    // Check flow control limit
     uint64_t max_offset=frame.offset+frame.data.size();
     if(!flow_control_manager.update_highest_received(stream_id, max_offset)){
-        abort_with("the other side sent more data than we allowed it to send (flow control limit broken)");
+        abort_with("flow control limit exceeded");
         return;
     }
 
     ReceiveStream &stream=receive_streams.try_emplace(stream_id, stream_id).first->second;
 
-    // Buffer frame until earlier bytes arrive
     if(!stream.add_stream_frame(frame)){
-        abort_with("the other side changed where stream "+to_string(stream_id)+
-                   " ends (its STREAM frames disagree about the last byte; protocol error)");
+        abort_with("invalid stream end offset on stream "+to_string(stream_id));
         return;
     }
 
@@ -694,13 +688,10 @@ void Connection::on_tick()
 
     uint64_t now_us=Packet::current_time_us();
 
-    // Close if nothing heard from peer within idle_timeout_us
     if(idle_timeout_us!=0&&now_us>last_received_us&&now_us-last_received_us>idle_timeout_us){
-        // Format in seconds if whole seconds, else ms
         string limit=(idle_timeout_us%1000000==0) ? to_string(idle_timeout_us/1000000)+" s"
                                                         : to_string(idle_timeout_us/1000)+" ms";
-        abort_with("nothing was received from the other side for "+limit+" (idle timeout)",
-                         CLOSE_IDLE_TIMEOUT);
+        abort_with("idle timeout ("+limit+")", CLOSE_IDLE_TIMEOUT);
         return;
     }
 

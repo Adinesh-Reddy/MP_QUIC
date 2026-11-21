@@ -8,15 +8,10 @@
 
 using namespace std;
 
-// Max UDP payload size (fits inside 1500-byte MTU with IP/UDP/tunnel headers)
+// Max UDP payload size
 const size_t MAX_PACKET_SIZE=1350;
 
-/*
- 17-byte public header (big-endian):
-   connection_id (8, bytes 0-7) | path_id (1, byte 8) | packet_number (8, bytes 9-16)
- path_id selects the packet number space. There is no flags byte: every field has a fixed
- size and the Path ID is always present, so nothing needs to be signalled.
-*/
+// 17-byte packet header (big-endian): connection_id (8B), path_id (1B), packet_number (8B)
 #pragma pack(push, 1)
 struct PacketHeader
 {
@@ -73,7 +68,6 @@ private:
     vector<Frame> frames;
 };
 
-// The packed struct documents the layout; both must stay the same size
 static_assert(sizeof(PacketHeader)==Packet::HEADER_SIZE, "PacketHeader and HEADER_SIZE disagree");
 
 #endif

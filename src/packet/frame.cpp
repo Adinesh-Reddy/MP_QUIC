@@ -125,10 +125,7 @@ static bool get_varint(const uint8_t *buffer, size_t length, size_t &pos, uint64
     return true;
 }
 
-/*
- Count valid ACK ranges that fit in the limit (highest first, first ends at
- largest_acked, and at least one missing packet between ranges).
-*/
+// Count valid ACK ranges up to MAX_ACK_RANGES
 static size_t writable_ack_ranges(const AckFrame &ack)
 {
     size_t count=0;
@@ -304,7 +301,6 @@ void Frame::serialize(vector<uint8_t> &out) const
         size_t num_addresses=min<size_t>(add_address.addresses.size(), UINT8_MAX);
         out.push_back(static_cast<uint8_t>(num_addresses));
         for(size_t i=0; i<num_addresses; i++){
-            // 4 bytes of IPv4 address in network order (10.0.0.2 -> 0A 00 00 02)
             in_addr ipv4;
             if(inet_pton(AF_INET, add_address.addresses[i].ip.c_str(), &ipv4)!=1){
                 throw invalid_argument("Bad IPv4 address in ADD_ADDRESS: \""+add_address.addresses[i].ip+"\"");

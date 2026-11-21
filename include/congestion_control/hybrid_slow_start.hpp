@@ -5,20 +5,15 @@
 
 using namespace std;
 
-/*
- Hybrid slow start: exits slow start early when RTT starts rising (queue filling up),
- before packet loss happens. Compares the min RTT of each round against global min RTT.
-*/
+// Exits slow start early when round minimum RTT rises above base minimum RTT
 class HybridSlowStart
 {
 public:
-    // Start a new round in slow start
     void start_receive_round(uint64_t last_sent);
 
-    // True if this ACK is from a packet sent after current round started
     bool is_end_of_round(uint64_t ack) const;
 
-    // Check new RTT sample; true if we should exit slow start (window is in packets)
+    // Check new RTT sample; returns true if slow start should exit
     bool should_exit_slow_start(uint64_t latest_rtt_us, uint64_t min_rtt_us, uint64_t congestion_window);
 
     void on_packet_sent(uint64_t packet_number);

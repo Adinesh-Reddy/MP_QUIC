@@ -35,7 +35,7 @@ Path *LowestRttScheduler::select_path(const map<uint8_t, Path *> &paths, bool ha
         return only;
     }
 
-    // If all paths look broken, try all of them so we can detect recovery
+    // If all paths are marked failed, allow trying any of them
     bool every_path_failed=all_of(paths.begin(), paths.end(), [](const auto &entry) {
         return entry.second->is_potentially_failed();
     });

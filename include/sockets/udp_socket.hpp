@@ -24,10 +24,10 @@ class UDPSocket
 
     bool bind(const string& ip,uint16_t port);
 
-    // Bound port (useful after bind(ip, 0) auto-picks a port)
+    // Local bound port
     uint16_t get_local_port();
 
-    // Ask OS for larger send/recv buffers to avoid burst drops
+    // Set send and receive socket buffer size
     bool set_buffer_size(int bytes);
     bool isValid() const;
     void close();

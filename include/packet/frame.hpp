@@ -5,10 +5,7 @@
 
 using namespace std;
 
-/*
- A packet is just a container. Everything inside (data and control) is a frame.
- Frames can be resent in another packet or on another path.
-*/
+// Frame type codes
 const uint8_t FRAME_STREAM=0x01;
 const uint8_t FRAME_ACK=0x02;
 const uint8_t FRAME_CONNECTION_CLOSE=0x03;
@@ -16,37 +13,27 @@ const uint8_t FRAME_WINDOW_UPDATE=0x04;
 const uint8_t FRAME_PING=0x07;
 const uint8_t FRAME_ADD_ADDRESS=0x10;
 const uint8_t FRAME_PATHS=0x12;
-// Reserved: 0x11 CLOSE_PATH
 
-// Frame header sizes in bytes (starts with 1-byte type)
-const size_t STREAM_FRAME_HEADER_SIZE=16; // type(1) stream_id(4) offset(8) fin(1) length(2)
-const size_t ACK_FRAME_HEADER_SIZE=16; // type(1) path_id(1) largest_acked(8) ack_delay_us(4) num_ranges(2)
-const size_t WINDOW_UPDATE_FRAME_SIZE=13; // type(1) stream_id(4) byte_offset(8)
-const size_t PING_FRAME_SIZE=1;  // type(1)
-const size_t PATHS_FRAME_HEADER_SIZE=2;  // type(1) num_paths(1)
-const size_t PATHS_ENTRY_SIZE=5;  // path_id(1) rtt_us(4)
-const size_t ADD_ADDRESS_FRAME_HEADER_SIZE=2; // type(1) num_addresses(1)
-const size_t ADD_ADDRESS_ENTRY_SIZE=6; // ipv4(4) port(2)
-const size_t CONNECTION_CLOSE_FRAME_HEADER_SIZE=7; // type(1) error_code(4) reason_length(2)
+// Frame header sizes in bytes
+const size_t STREAM_FRAME_HEADER_SIZE=16;
+const size_t ACK_FRAME_HEADER_SIZE=16;
+const size_t WINDOW_UPDATE_FRAME_SIZE=13;
+const size_t PING_FRAME_SIZE=1;
+const size_t PATHS_FRAME_HEADER_SIZE=2;
+const size_t PATHS_ENTRY_SIZE=5;
+const size_t ADD_ADDRESS_FRAME_HEADER_SIZE=2;
+const size_t ADD_ADDRESS_ENTRY_SIZE=6;
+const size_t CONNECTION_CLOSE_FRAME_HEADER_SIZE=7;
 const size_t MAX_CLOSE_REASON_LENGTH=200;
 
-/*
- After the 16-byte header, ACK ranges are stored as varints:
-   first_range_length (packets in highest range - 1)
-   then for each next range: gap (missing packets above it), length (packets - 1)
- Varints use 1, 2, 4, or 8 bytes. Top 2 bits of byte 0 tell size:
-   00=1 byte, 01=2 bytes, 10=4 bytes, 11=8 bytes.
-*/
+// Variable-length integer limits for ACK ranges
 const size_t MAX_VARINT_SIZE=8;
 const uint64_t MAX_VARINT_VALUE=(1ULL<<62)-1;
 
 // Max packet ranges in one ACK frame
 const size_t MAX_ACK_RANGES=256;
 
-/*
- Carries stream data. offset is the byte position in the stream,
- and stays the same if the data is resent on another packet or path.
-*/
+// Stream data chunk with byte offset
 struct StreamFrame
 {
     uint32_t stream_id=0;
@@ -55,73 +42,67 @@ struct StreamFrame
     vector<uint8_t> data;
 };
 
-// One continuous range of received packet numbers [first, last]
+// Continuous range of received packet numbers [first, last]
 struct AckRange
 {
     uint64_t first;
     uint64_t last;
 };
 
-/*
- Tells sender which packets were received on one path.
- path_id picks which path's packet numbers these ranges belong to.
-*/
+// Selective ACK for one path
 struct AckFrame
 {
     uint8_t path_id=0;
     uint64_t largest_acked=0;
-    uint32_t ack_delay_us=0;  // time receiver waited before sending ACK
-    vector<AckRange> ranges;    // highest first; ranges[0].last == largest_acked
+    uint32_t ack_delay_us=0;
+    vector<AckRange> ranges;
 
     uint64_t lowest_acked() const;
     bool acks_packet(uint64_t packet_number) const;
 };
 
-// Updates receive window as an absolute byte offset (stream_id 0 = full connection)
+// Receive window update (stream_id 0 = connection level)
 struct WindowUpdateFrame
 {
     uint32_t stream_id=0;
     uint64_t byte_offset=0;
 };
 
-// Marks a path as possibly broken inside a PATHS frame
+// Sentinel value marking a broken path in a PATHS frame
 const uint32_t PATHS_RTT_POTENTIALLY_FAILED=UINT32_MAX;
 
-// Info about one path sent in a PATHS frame
+// Path status entry for PATHS frame
 struct PathInfo
 {
     uint8_t path_id=0;
-    uint32_t rtt_us=0; // smoothed RTT (0 = unknown), or PATHS_RTT_POTENTIALLY_FAILED
+    uint32_t rtt_us=0;
 };
 
-/*
- Shares our path list, RTTs, and broken status with the peer.
- Peer can stop using a broken path right away without waiting for its own timeout.
-*/
+// Lists active paths and their RTT or broken status
 struct PathsFrame
 {
     vector<PathInfo> paths;
 };
 
-// IPv4 address + UDP port
+// IPv4 address and UDP port
 struct NetworkAddress
 {
     string ip;
     uint16_t port=0;
 };
 
-// Lists our local addresses so the peer can open new paths to them
+// Advertises local addresses so peer can open additional paths
 struct AddAddressFrame
 {
     vector<NetworkAddress> addresses;
 };
 
-// Connection close reasons
-const uint32_t CLOSE_NO_ERROR=0; // normal close
-const uint32_t CLOSE_PROTOCOL_ERROR=1; // bad packet or protocol violation
-const uint32_t CLOSE_IDLE_TIMEOUT=2; // nothing received for too long
+// Connection close error codes
+const uint32_t CLOSE_NO_ERROR=0;
+const uint32_t CLOSE_PROTOCOL_ERROR=1;
+const uint32_t CLOSE_IDLE_TIMEOUT=2;
 
-// Tells peer the connection is closing now
+// Signals connection termination
 struct ConnectionCloseFrame
 {
     uint32_t error_code=CLOSE_NO_ERROR;

@@ -12,16 +12,13 @@
 
 using namespace std;
 
-/*
- One network path of a connection (addresses, packet numbers, RTT, OLIA, ACK state).
-*/
+// Represents one network path in a connection
 class Path
 {
 public:
     Path(uint8_t id, const string &local_ip, uint16_t local_port,
          const string &remote_ip, uint16_t remote_port, UDPSocket *sock);
 
-    // Handlers store pointers to members, so do not copy Path
     Path(const Path &)=delete;
     Path &operator=(const Path &)=delete;
 
@@ -77,7 +74,6 @@ private:
     uint64_t last_heard_us=0;
     bool looks_broken=false;
 
-    // Declare rtt_stats and congestion before sent_packet_handler (it holds pointers to them)
     RttStats rtt_stats;
     OliaSender congestion;
     SentPacketHandler sent_packet_handler;

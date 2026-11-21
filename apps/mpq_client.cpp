@@ -8,13 +8,7 @@
 
 using namespace std;
 
-/*
- mpq_client: downloads one file from mpq_server over one or more paths.
-   mpq_client --server 10.0.0.2:4433 --local 10.0.0.1 --local 10.0.1.1 --get big.bin --out big.bin
- First --local is path 0; extra --local IPs open after ADD_ADDRESS.
- Prints a final RESULT line for scripts.
-*/
-
+// File download client over one or more paths
 static void usage()
 {
     cout<<"Usage: mpq_client --server IP:PORT --local IP [--local IP] --get NAME --out FILE [options]\n"
@@ -195,14 +189,13 @@ static int run(int argc, char **argv)
     return 0;
 }
 
-// Catch internal exceptions and print a clean message
 int main(int argc, char **argv)
 {
     try{
         return run(argc, argv);
     }
     catch(const exception &e){
-        cout<<"[ERROR] mpq_client internal error: "<<e.what()<<"\n";
+        cout<<"[ERROR] mpq_client error: "<<e.what()<<"\n";
         return 3;
     }
 }

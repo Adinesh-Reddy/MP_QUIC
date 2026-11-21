@@ -35,18 +35,15 @@ public:
 
     uint64_t get_connection_id() const;
 
-    /*
-     Register a path created by PathManager. Both hosts must use the same Path ID.
-     OLIA links all paths of a connection, so do not use a Path after Connection is destroyed.
-    */
+    // Register a path created by PathManager
     bool add_path(Path *path);
     Path *get_path(uint8_t path_id);
     const map<uint8_t, Path *> &get_paths() const;
 
-    // Send PING on a path (announces new path and measures first RTT)
+    // Send PING on a path
     bool send_ping(uint8_t path_id);
 
-    // Tell peer our local addresses via ADD_ADDRESS frame
+    // Send local addresses via ADD_ADDRESS frame
     void advertise_addresses(const vector<NetworkAddress> &addresses);
     void on_add_address(AddAddressCallback cb);
 

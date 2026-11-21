@@ -65,17 +65,14 @@ def main():
         faster_a = np.sum(speedup_a > 1.0) / len(speedup_a) * 100.0
         faster_b = np.sum(speedup_b > 1.0) / len(speedup_b) * 100.0
 
-        print("\n======================================================================")
-        print("                   MP-QUIC vs SINGLE-PATH EVALUATION                  ")
-        print("======================================================================")
+        print("\nMP-QUIC vs Single-Path Summary")
         print(f"Valid Scenarios: {len(valid)}")
         print(f"Multipath Faster than Best Single Path (A First): {faster_a:.1f}%")
         print(f"Multipath Faster than Best Single Path (B First): {faster_b:.1f}%")
         print(f"Median Speedup Ratio (A First): {np.median(speedup_a):.2f}x")
         print(f"Median Speedup Ratio (B First): {np.median(speedup_b):.2f}x")
         print(f"Median EBen (A First): {valid[ea_col].median():.2f}")
-        print(f"Median EBen (B First): {valid[eb_col].median():.2f}")
-        print("======================================================================\n")
+        print(f"Median EBen (B First): {valid[eb_col].median():.2f}\n")
 
         # Plot CDF of Speedup
         plt.figure(figsize=(8, 5))
@@ -122,38 +119,22 @@ def main():
 
     # If has_tcp is True, proceed with 4-way evaluation:
 
-    # -------------------------------------------------------------------------
-    # 1. TIME RATIOS
-    # Time Ratio = Time_TCP / Time_QUIC
-    # Since Time = Size / Goodput, Time_TCP / Time_QUIC = Goodput_QUIC / Goodput_TCP
-    # Ratio > 1.0 means QUIC is faster than TCP!
-    # -------------------------------------------------------------------------
-    # Single-Path: Time TCP / Time QUIC (Path A)
+    # 1. Time ratios (Time_TCP / Time_QUIC = Goodput_QUIC / Goodput_TCP)
     ratio_single = (valid['quic_a'] / valid['tcp_a']).values
-    
-    # Multipath: Time MPTCP / Time MPQUIC (Path A First)
     ratio_multi = (valid['mpquic_a_first'] / valid['mptcp_a_first']).values
-
-    # Percentage of scenarios where MPQUIC beat MPTCP (Ratio > 1.0)
     mpquic_beat_mptcp = np.sum(ratio_multi > 1.0) / len(ratio_multi) * 100.0
 
-    print("\n======================================================================")
-    print("                     4-WAY EVALUATION RESULTS                         ")
-    print("======================================================================")
+    print("\n4-Way Evaluation Results")
     print(f"Valid Scenarios: {len(valid)}")
     print(f"MPQUIC Faster than MPTCP: {mpquic_beat_mptcp:.1f}% of scenarios")
     print(f"Median Time Ratio (MPTCP / MPQUIC): {np.median(ratio_multi):.2f}x")
     print(f"Median Single-Path Time Ratio (TCP / QUIC): {np.median(ratio_single):.2f}x")
-    print("----------------------------------------------------------------------")
     print(f"MPTCP Median EBen (A First):  {valid['eben_mptcp_a'].median():.2f}")
     print(f"MPTCP Median EBen (B First):  {valid['eben_mptcp_b'].median():.2f}")
     print(f"MPQUIC Median EBen (A First): {valid['eben_mpquic_a'].median():.2f}")
-    print(f"MPQUIC Median EBen (B First): {valid['eben_mpquic_b'].median():.2f}")
-    print("======================================================================\n")
+    print(f"MPQUIC Median EBen (B First): {valid['eben_mpquic_b'].median():.2f}\n")
 
-    # -------------------------------------------------------------------------
-    # PLOT 1: CDF of Time Ratio
-    # -------------------------------------------------------------------------
+    # Plot 1: CDF of Time Ratio
     plt.figure(figsize=(8, 5))
     
     # Single Path CDF
@@ -216,9 +197,8 @@ def main():
     boxplot_path = 'eben_comparison_20.png'
     plt.savefig(boxplot_path, dpi=300)
     plt.close()
-    print(f"[PLOT] Generated: '{boxplot_path}'")
-
-    print("\n[SUCCESS] Plots generated successfully!")
+    print(f"[PLOT] Saved '{boxplot_path}'")
+    print("Done.")
 
 if __name__ == '__main__':
     main()
