@@ -1,5 +1,5 @@
-#ifndef MP_QUIC_MINI_PATH_HPP
-#define MP_QUIC_MINI_PATH_HPP
+#ifndef PATH_HPP
+#define PATH_HPP
 
 #include<bits/stdc++.h>
 #include "sockets/udp_socket.hpp"

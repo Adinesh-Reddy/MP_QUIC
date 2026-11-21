@@ -42,16 +42,6 @@ void Packet::set_packet_number(uint64_t num)
     packet_number=num;
 }
 
-uint64_t Packet::get_packet_num() const
-{
-    return packet_number;
-}
-
-void Packet::set_packet_num(uint64_t num)
-{
-    packet_number=num;
-}
-
 const vector<Frame> &Packet::get_frames() const
 {
     return frames;

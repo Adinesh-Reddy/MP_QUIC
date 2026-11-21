@@ -40,8 +40,6 @@ public:
 
     uint64_t get_packet_number() const;
     void set_packet_number(uint64_t num);
-    uint64_t get_packet_num() const;
-    void set_packet_num(uint64_t num);
 
     const vector<Frame> &get_frames() const;
     void add_frame(const Frame &frame);

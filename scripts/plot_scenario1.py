@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-MP-QUIC Scenario 1: 4-Way Evaluation Plotter
-Generates:
-  - CDF of Time Ratio (TCP/QUIC vs MPTCP/MPQUIC)
-  - Boxplot of EBen (MPTCP vs TCP and MPQUIC vs QUIC)
-"""
+# Scenario 1 plotter: Time Ratio CDF and EBen boxplot
 
 import sys
 import os
@@ -22,13 +17,11 @@ def main():
     df = pd.read_csv(csv_file)
     print(f"Loaded {len(df)} scenarios from '{csv_file}'.")
 
-    # Check whether TCP / MPTCP columns exist and have non-zero data
+    # Check if TCP and MPTCP columns have data
     has_tcp = ('tcp_a' in df.columns and (df['tcp_a'] > 0).any())
 
     if has_tcp:
-        # ---------------------------------------------------------------------
-        # MODE 1: COMPLETE 4-WAY EVALUATION
-        # ---------------------------------------------------------------------
+        # 4-way evaluation (TCP, MPTCP, QUIC, MP-QUIC)
         valid = df[(df['tcp_a'] > 0) & (df['tcp_b'] > 0) &
                    (df['quic_a'] > 0) & (df['quic_b'] > 0) &
                    (df['mptcp_a_first'] > 0) & (df['mpquic_a_first'] > 0)].copy()
@@ -38,9 +31,7 @@ def main():
             has_tcp = False
 
     if not has_tcp:
-        # ---------------------------------------------------------------------
-        # MODE 2: QUIC vs MP-QUIC ONLY
-        # ---------------------------------------------------------------------
+        # QUIC vs MP-QUIC only
         qa_col = 'quic_a' if 'quic_a' in df.columns else 'g_single_a'
         qb_col = 'quic_b' if 'quic_b' in df.columns else 'g_single_b'
         ma_col = 'mpquic_a_first' if 'mpquic_a_first' in df.columns else 'g_multi_a_first'
@@ -52,7 +43,6 @@ def main():
                    (df[ma_col] > 0) & (df[mb_col] > 0)].copy()
 
         if len(valid) == 0:
-            # Fall back to scenarios where at least MP-QUIC and one single path succeeded
             valid = df[(df[ma_col] > 0) & ((df[qa_col] > 0) | (df[qb_col] > 0))].copy()
             if len(valid) == 0:
                 print("[ERROR] No valid non-zero rows found in CSV!")
@@ -74,7 +64,7 @@ def main():
         print(f"Median EBen (A First): {valid[ea_col].median():.2f}")
         print(f"Median EBen (B First): {valid[eb_col].median():.2f}\n")
 
-        # Plot CDF of Speedup
+        # Speedup CDF
         plt.figure(figsize=(8, 5))
         s_a = np.sort(speedup_a)
         cdf_a = np.arange(1, len(s_a) + 1) / len(s_a)
@@ -97,7 +87,7 @@ def main():
         plt.close()
         print("[PLOT] Generated: 'time_ratio_cdf_20.png'")
 
-        # Plot EBen Boxplot
+        # EBen Boxplot
         plt.figure(figsize=(7, 5))
         box_data = [valid[ea_col].values, valid[eb_col].values]
         box = plt.boxplot(box_data, labels=['MP-QUIC (A first)', 'MP-QUIC (B first)'], patch_artist=True, widths=0.4)
@@ -117,9 +107,7 @@ def main():
         print("[PLOT] Generated: 'eben_comparison_20.png'")
         return
 
-    # If has_tcp is True, proceed with 4-way evaluation:
-
-    # 1. Time ratios (Time_TCP / Time_QUIC = Goodput_QUIC / Goodput_TCP)
+    # Time ratios (Time_TCP / Time_QUIC = Goodput_QUIC / Goodput_TCP)
     ratio_single = (valid['quic_a'] / valid['tcp_a']).values
     ratio_multi = (valid['mpquic_a_first'] / valid['mptcp_a_first']).values
     mpquic_beat_mptcp = np.sum(ratio_multi > 1.0) / len(ratio_multi) * 100.0
@@ -137,17 +125,14 @@ def main():
     # Plot 1: CDF of Time Ratio
     plt.figure(figsize=(8, 5))
     
-    # Single Path CDF
     sorted_single = np.sort(ratio_single)
     cdf_single = np.arange(1, len(sorted_single) + 1) / len(sorted_single)
     plt.plot(sorted_single, cdf_single, label='Time TCP / QUIC (Single-Path)', color='#1f77b4', linewidth=2)
 
-    # Multipath CDF
     sorted_multi = np.sort(ratio_multi)
     cdf_multi = np.arange(1, len(sorted_multi) + 1) / len(sorted_multi)
     plt.plot(sorted_multi, cdf_multi, label='Time MPTCP / MPQUIC (Multipath)', color='#ff7f0e', linestyle='--', linewidth=2.5)
 
-    # Parity line (Ratio = 1.0)
     plt.axvline(x=1.0, color='gray', linestyle=':', linewidth=1.5, label='Parity (Ratio = 1.0)')
 
     plt.xlabel('Time Ratio (Values > 1.0 mean QUIC is faster)', fontsize=11)
@@ -164,9 +149,7 @@ def main():
     plt.close()
     print(f"[PLOT] Generated: '{cdf_path}'")
 
-    # -------------------------------------------------------------------------
-    # PLOT 2: Boxplot of EBen (MPTCP vs MPQUIC)
-    # -------------------------------------------------------------------------
+    # Plot 2: Boxplot of EBen (MPTCP vs MPQUIC)
     plt.figure(figsize=(8, 5))
     
     box_data = [

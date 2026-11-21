@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-MP-QUIC Scenario 2: Short 256 KB File Downloads Plotter
-Generates:
-  - CDF of Transfer Completion Time (us) - (MP)QUIC vs (MP)TCP
-  - Aggregation Benefit (E_Ben) Distribution for Short Transfers
-"""
+# Scenario 2 plotter: 256 KB download time CDF and E_Ben boxplot
 
 import sys
 import os
@@ -22,7 +17,6 @@ def main():
     df = pd.read_csv(csv_file)
     print(f"Loaded {len(df)} short transfer scenarios from '{csv_file}'.")
 
-    # Filter out invalid / zero rows if any
     valid = df[(df['time_us_quic_a'] > 0) | (df['time_us_mpquic_a'] > 0)].copy()
     if len(valid) == 0:
         print("[ERROR] No valid non-zero rows in CSV!")
@@ -49,24 +43,20 @@ def main():
     # Plot 1: CDF of completion time (us)
     plt.figure(figsize=(8, 5.5))
     
-    # Single-Path QUIC
     quic_times = np.sort(valid[valid['time_us_quic_a'] > 0]['time_us_quic_a'].values)
     quic_cdf = np.arange(1, len(quic_times) + 1) / len(quic_times)
     plt.plot(quic_times, quic_cdf, label='Single-Path QUIC (Path A)', color='#1f77b4', linewidth=2.5)
 
-    # Multipath QUIC
     if 'time_us_mpquic_a' in valid.columns and (valid['time_us_mpquic_a'] > 0).any():
         mpq_times = np.sort(valid[valid['time_us_mpquic_a'] > 0]['time_us_mpquic_a'].values)
         mpq_cdf = np.arange(1, len(mpq_times) + 1) / len(mpq_times)
         plt.plot(mpq_times, mpq_cdf, label='MP-QUIC (Path A initial)', color='#2ca02c', linewidth=2.2, linestyle='-')
 
-    # Single-Path TCP
     if has_tcp:
         tcp_times = np.sort(valid[valid['time_us_tcp_a'] > 0]['time_us_tcp_a'].values)
         tcp_cdf = np.arange(1, len(tcp_times) + 1) / len(tcp_times)
         plt.plot(tcp_times, tcp_cdf, label='Single-Path TCP (Path A)', color='#d62728', linewidth=2.0, linestyle='--')
 
-    # Multipath TCP
     if has_mptcp:
         mptcp_times = np.sort(valid[valid['time_us_mptcp_a'] > 0]['time_us_mptcp_a'].values)
         mptcp_cdf = np.arange(1, len(mptcp_times) + 1) / len(mptcp_times)
@@ -85,9 +75,7 @@ def main():
     plt.close()
     print(f"[SAVED] {out_cdf}")
 
-    # -------------------------------------------------------------------------
-    # PLOT 2: AGGREGATION BENEFIT (E_Ben) BOXPLOT
-    # -------------------------------------------------------------------------
+    # Plot 2: Aggregation benefit (E_Ben) boxplot
     plt.figure(figsize=(7, 5))
     
     box_data = []
